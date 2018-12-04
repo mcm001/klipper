@@ -32,6 +32,7 @@ class SixOhTwo:
         mcu.register_config_callback(self.build_config)
         idler_offset = config.getfloat('idler_offset', 22., above=0.)
         idler_spacing = config.getfloat('idler_spacing', 100., above=0.)
+        toolhead_fsensor_endstop_pin = config.get('filsensor_endstop_pin')
         self.idler_positions = [
             (idler_offset + i*idler_spacing) for i in range(5, -1, -1)
             ]
@@ -43,12 +44,22 @@ class SixOhTwo:
         self.synced_velocity = config.getfloat('synced_velocity', 20.)
         self._init_tool()
         self.engaged = False
-        #TODO: add help to the commands
+        # TODO: add help to the commands
+        # done, cmd_HELP added.
         self.gcode.register_command('MOVE_SELECTOR', self.cmd_MOVE_SELECTOR)
         self.gcode.register_command('HOME_SELECTOR', self.cmd_HOME_SELECTOR)
         self.gcode.register_command('SELECTOR_MOTOR_OFF', self.cmd_SELECTOR_MOTOR_OFF)
         self.gcode.register_command('PAUSE_TEST', self.cmd_PAUSE_TEST)
+        self.gcode.register_command('QUERY_FSENSOR_STATUS', self.cmd_QUERRY_FSENSOR_STATUS)
         self.gcode.register_command('A602', self.cmd_A602)
+        self.gcode.register_command('A602_HELP', self.cmd_HELP)
+
+        # register the filament sensor button for callbacks
+        button_module = self.printer.try_load_module(config, "buttons")
+        button_module.register_buttons([toolhead_fsensor_endstop_pin], self.fsensor_endstop_callback)
+        self.fsensor_endstop_status = False
+
+
     def printer_state(self, state):
         if state == 'ready':
             logging.info("S3l3ctor set to tool [%d]", self.current_tool)
@@ -90,11 +101,12 @@ class SixOhTwo:
         # retract to move off of endstop
         self.move_tumbler(10., self.tumbler_velocity)
         self.engaged = False
-    def home_drive(self, endstop=0):
-        self.selector_tool.get_kinematics().set_drive_endstop(endstop)
-        # TODO: Need to set the move direction too?
-        axis = [1]
-        self._home_axis(axis)
+    # def home_drive(self, endstop=0):
+    #     self.selector_tool.get_kinematics().set_drive_endstop(endstop)
+    #     # TODO: Need to set the move direction too?
+    #     axis = [1]
+    #     self._home_axis(axis)
+
     def _home_axis(self, axis):
         homing_state = homing.Homing(self.selector_tool)
         homing_state.set_no_verify_retract()
@@ -104,6 +116,11 @@ class SixOhTwo:
             # TODO: Instead of responding with an error
             # Give user a chance to recover
             self.gcode.respond_error(str(e))
+
+    # Update endstop status on callback
+    def fsensor_endstop_callback(self, eventtime, state):
+        self.fsensor_endstop_status = state
+
     def move_tumbler(self, dist, speed):
         pos = self.selector_tool.get_position()
         pos[0] += dist
@@ -157,14 +174,46 @@ class SixOhTwo:
             return
         self.selector_tool.wait_moves()
         self.selector_tool.save_extruder_positon()
+
+        # get old button state to check if it changes
+        old_button_state = self.fsensor_endstop_status
+
         self.home_tumbler()
         self.move_to_tumbler_index(self.current_tool, self.tumbler_velocity)
         # TODO: - retract in sync?
         self.move_drive(self.synced_dist*-1, self.tumbler_velocity, with_ex=True)
-        self.move_drive(self.change_retract_dist, self.drive_velocity)
-        self.move_to_tumbler_index(index, self.tumbler_velocity)
-        self.move_drive(self.change_extrude_dist, self.drive_velocity)
-        self.move_drive(self.synced_dist, self.tumbler_velocity, with_ex=True)
+
+        # TODO make it clear that the synced distance *must* clear the endstop
+        # check that the filament is no longer present
+        self.selector_tool.wait_moves() # flush move que
+        new_button_state = self.fsensor_endstop_status
+        if (old_button_state != new_button_state): # If the state changed
+            self.gcode.respond_info("STATUS: Fsensor endstop state changed!")
+        else:
+            self.gcode.respond_info("STATUS: State did not change! Trying to keep unload more")
+            self.move_drive(self.synced_dist*-1, self.tumbler_velocity, with_ex=True) # try to unload more to clear endstop
+            new_button_state = self.fsensor_endstop_status
+            if ( old_button_state == new_button_state ): # if the state STILL hasn't changed
+                self.gcode.respond_error("ERROR: Button status did not change! Old value: %s New value: %s" % (old_button_state, new_button_state))
+                # TODO pause the print for recovery
+            else:
+                # state changed on retry (I doubt this will happen)
+                self.gcode.respond_info("STATUS: State changed this time, filament is likely now offset from expected location")
+
+        self.move_drive(self.change_retract_dist, self.drive_velocity) # retract filament
+        self.move_to_tumbler_index(index, self.tumbler_velocity) # change tool index
+        self.move_drive(self.change_extrude_dist, self.drive_velocity) # extrude filament
+        self.move_drive(self.synced_dist, self.tumbler_velocity, with_ex=True) # synced move
+
+        self.selector_tool.wait_moves() # flush move que
+        new_button_state = self.fsensor_endstop_status
+        if ( old_button_state == new_button_state ): # if current endstop status matches loaded filament status
+            self.gcode.respond_info("STATUS: Filament load successful, endstop detects filmanet")
+        else:
+            self.gcode.respond_error("ERROR: Load unsuccessful! Current endstop status does not match old endstop status")
+            # TODO pause print
+
+
         self.selector_tool.reset_extruder_pos()
         self.disengage()
         self.save_tool()
@@ -254,6 +303,11 @@ class SixOhTwo:
         self.change_tool(tool_idx)
         toolhead.move(pause_pos, 30.)
         toolhead.wait_moves()
+    def cmd_QUERRY_FSENSOR_STATUS(self, params):
+        self.gcode.respond_info("Current fsensor endstop status: %i" % self.fsensor_endstop_status)
+    def cmd_HELP(self, params):
+        self.gcode.respond_info("S3l3ctor commands currently loaded:\nHOME_SELECTOR, SELECTOR_MOTOR_OFF, PAUSE_TEST, QUERRY_FSENSOR_STATUS, A602, A602_HELP")
+
 
 STALL_TIME = 0.100
 
@@ -339,7 +393,7 @@ class SelectorKinematics:
         extruder_es = config.get('extruder_endstop', None)
         if extruder_es is not None:
             ex_pin = ppins.setup_pin('endstop', extruder_es)
-            self.rails[1].add_to_endstop(ex_pin)   
+            self.rails[1].add_to_endstop(ex_pin)
         self.drive_endstop = self.rails[1].get_endstops()[0]
         self.need_motor_enable = True
         self.max_velocity, self.max_accel = toolhead.get_max_velocity()
