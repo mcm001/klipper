@@ -4,6 +4,17 @@
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
+# Example configuration:
+# [step_calculator stepper_x]
+# mode: microstepping
+# full_steps_per_mm: 12.5
+# microstepping: 16
+
+# mode: pulley
+# steps_per_revolution: 200
+# microstepping: 16
+# belt_pitch: 2
+# pulley_teeth: 16
 
 class step_calculator:
     def __init__(self,config):
@@ -14,7 +25,7 @@ class step_calculator:
         self.steps_per_mm_with_microstepping = config.get("microstepped_steps_per_mm", default=None)
         self.basic_full_step_per_mm = config.get("full_steps_per_mm", default=None)
         self.motor_microstepping = config.getint("microstepping", default=None)
-        self.steps_per_rev = config.getint("steps_per_`revolution`", default=None)
+        self.steps_per_rev = config.getint("steps_per_revolution", default=None)
         self.step_angle = config.getfloat("motor_step_angle", default=None)
         self.gear_reduction = config.getfloat("gear_reduction", default=None)
 
