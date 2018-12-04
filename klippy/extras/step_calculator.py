@@ -11,6 +11,7 @@ class step_calculator:
         self.mode = config.get("mode", default="basic")
         
         # Define other params
+        self.steps_per_mm_with_microstepping = config.get("microstepped_steps_per_mm", default=None)
         self.basic_full_step_per_mm = config.get("full_steps_per_mm", default=None)
         self.motor_microstepping = config.getint("microstepping", default=None)
         self.steps_per_rev = config.getint("steps_per_`revolution`", default=None)
@@ -35,9 +36,15 @@ class step_calculator:
             self.steps_per_mm = self.leadscrew_calc()
         elif (self.mode == "pulley" or self.mode == "belt"):
             self.steps_per_mm = self.belt_calc()
+        elif(self.mode == "microstep"):
+            self.steps_per_mm = self.microstep_calc
+        
+        self.mm_per_step = 1 / self.steps_per_mm
 
+    def basic_calc(self): #Calculate step distance from steps per mm
+        self.steps_per_mm = self.steps_per_mm_with_microstepping
 
-    def basic_calc(self): 
+    def microstep_calc(self): 
         self.steps_per_mm = self.basic_full_step_per_mm * self.motor_microstepping
 
 
