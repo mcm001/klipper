@@ -7,7 +7,7 @@
 
 class step_calculator:
     def __init__(self,config):
-        # Choose mode - defaults to basic, other options are leadscrew and pulley/belt
+        # Choose mode - defaults to basic, other options microstepping calculator, leadscrew and pulley/belt 
         self.mode = config.get("mode", default="basic")
         
         # Define other params
@@ -41,10 +41,12 @@ class step_calculator:
         
         self.mm_per_step = 1 / self.steps_per_mm
 
+
     def basic_calc(self): #Calculate step distance from steps per mm
         self.steps_per_mm = self.steps_per_mm_with_microstepping
 
-    def microstep_calc(self): 
+
+    def microstep_calc(self):
         self.steps_per_mm = self.basic_full_step_per_mm * self.motor_microstepping
 
 
