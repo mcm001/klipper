@@ -57,7 +57,7 @@ class step_calculator:
         # TODO else, throw error
 
         # compensation for if calculated value is off, should *never* be used (looking at you, extruders)
-        self.steps_per_mm = self.steps_per_mm * step_compensations
+        self.steps_per_mm = self.steps_per_mm * self.step_compensation
 
         self.mm_per_step = 1 / self.steps_per_mm
 
