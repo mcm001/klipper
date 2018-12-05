@@ -26,8 +26,10 @@ class step_calculator:
         self.basic_full_step_per_mm = config.get("full_steps_per_mm", default=None)
         self.motor_microstepping = config.getint("microstepping", default=None)
         self.steps_per_rev = config.getint("steps_per_revolution", default=None)
-        self.step_angle = config.getfloat("motor_step_angle", default=None)
+        self.step_angle = config.getfloat("motor_step_angle", default=1.8)
         self.gear_reduction = config.getfloat("gear_reduction", default=None)
+        self.driven_pulley_tooth_count = config.getint("driven_gear_tooth_count", default=None)
+        self.step_compensation = config.getint("step_compensation", default=1.0)
 
         # Pulley specific stuff
         self.pulley_teeth = config.getint("pulley_teeth", default=None)
@@ -37,9 +39,11 @@ class step_calculator:
         self.leadscrew_pitch_per_rev = config.getfloat("leadscrew_pitch_mm", default=None)
 
 
+
     def calculate_steps(self):
-        if self.step_angle is not None:
+        if self.step_angle is not None: 
             self.steps_per_rev = self.step_angle / 360
+
 
         if self.mode == "basic":
             self.steps_per_mm = self.basic_calc()
@@ -49,7 +53,12 @@ class step_calculator:
             self.steps_per_mm = self.belt_calc()
         elif(self.mode == "microstep"):
             self.steps_per_mm = self.microstep_calc
-        
+
+        # TODO else, throw error
+
+        # compensation for if calculated value is off, should *never* be used (looking at you, extruders)
+        self.steps_per_mm = self.steps_per_mm * step_compensations
+
         self.mm_per_step = 1 / self.steps_per_mm
 
 
