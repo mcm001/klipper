@@ -49,22 +49,22 @@ class pat9125_fsensor:
         # see line 66 of pat9125.c
         self.pat9125_init_seq2 = [0x06, 0x028, 0x33, 0x0d0, 0x36, 0x0c2, 0x3e, 0x001, 0x3f, 0x015, 0x41, 0x032, 0x42, 0x03b, 0x43, 0x0f2, 0x44, 0x03b, 0x45, 0x0f2, 0x46, 0x022, 0x47, 0x03b, 0x48, 0x0f2, 0x49, 0x03b, 0x4a, 0x0f0, 0x58, 0x098, 0x59, 0x00c, 0x5a, 0x008, 0x5b, 0x00c, 0x5c, 0x008, 0x61, 0x010, 0x67, 0x09b, 0x6e, 0x022, 0x71, 0x007, 0x72, 0x008, 0x0ff]
 
-        # TODO is this even how you multiline array?
+        # TODO is this even how you multiline list?
         pat9125_init_seq1 = [ PAT9125_WP, 0x5a,
-            # Set the X resolution to zero to let the sensor know that it could safely ignore movement in the X axis.
-            PAT9125_RES_X, PAT9125_XRES,
-            # Set the Y resolution to a maximum (or nearly a maximum).
-            PAT9125_RES_Y, PAT9125_YRES,
-            # Set 12-bit X/Y data format.
-            PAT9125_ORIENTATION, 0x04,
+        # Set the X resolution to zero to let the sensor know that it could safely ignore movement in the X axis.
+        PAT9125_RES_X, PAT9125_XRES,
+        # Set the Y resolution to a maximum (or nearly a maximum).
+        PAT9125_RES_Y, PAT9125_YRES,
+        # Set 12-bit X/Y data format.
+        PAT9125_ORIENTATION, 0x04,
         #	PAT9125_ORIENTATION, 0x04 | (xinv?0x08:0) | (yinv?0x10:0), //!? direction switching does not work
-            # Now continues the magic sequence from the PAT912EL Application Note: Firmware Guides for Tracking Optimization.
-            0x5e, 0x08,
-            0x20, 0x64,
-            0x2b, 0x6d,
-            0x32, 0x2f,
-            # stopper
-            0x0ff]
+        # Now continues the magic sequence from the PAT912EL Application Note: Firmware Guides for Tracking Optimization.
+        0x5e, 0x08,
+        0x20, 0x64,
+        0x2b, 0x6d,
+        0x32, 0x2f,
+        # stopper
+        0x0ff]
 
 
 
