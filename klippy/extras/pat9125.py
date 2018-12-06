@@ -11,6 +11,11 @@ CHIP_ID = 0x75 << 1
 REG_ID_1 = 0x00
 REG_ID_2 = 0x01
 
+PAT9125_DELTA_XL = 0x03
+PAT9125_DELTA_YL = 0x04
+PAT9125_SHUTTER	= 0x14
+PAT9125_FRAME = 0x17
+
 class PAT9125:
     def __init__(self, config):
         self.printer = config.get_printer()
@@ -19,6 +24,9 @@ class PAT9125:
         self.gcode = self.printer.lookup_object('gcode')
         self.gcode.register_command(
             'SENSOR_READ_ID', self.cmd_SENSOR_READ_ID)
+        self.gcode.register_command(
+            "SENSOR_READ_INFO", self.cmd_SENSOR_READ_INFO
+        )
     def cmd_SENSOR_READ_ID(self, params):
         pr1 = self.i2c.i2c_read([REG_ID_1], 1)
         pr2 = self.i2c.i2c_read([REG_ID_2], 1)
@@ -30,6 +38,18 @@ class PAT9125:
         self.gcode.respond_info(
             "Sensor Test: Read [%#x,%#x], Expected [%#x,%#x]"
             % (pid1[0], pid2[0], e_resp[0], e_resp[1]))
+    def read_register(self, register_ID):
+        logging.info("reading contents of register " + register_ID)
+        responce = self.i2c.i2c_read([register_ID], 1)
+        return responce
+
+    def cmd_SENSOR_READ_INFO(self,params):
+            shutter = self.read_register(PAT9125_SHUTTER)
+            frame = self.read_register(PAT9125_FRAME)
+            dx = self.read_register(PAT9125_DELTA_XL)
+            dy = self.read_register(PAT9125_DELTA_XL)
+            self.gcode.respond_info("PAT9125 INFO: Shutter: %s Frame: %s Delta X: %i Delta Y: %i" % (shutter, frame, dx, dy))
+            # self.gcode.respond_info("Filament Movement: ")
 
 def load_config(config):
     return PAT9125(config)
