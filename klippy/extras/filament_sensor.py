@@ -139,44 +139,7 @@ class pat9125_fsensor:
     
     def check_autoload(self):
         # check the sensor values for an autoload event
-        if (pat9125_enabled is not True) or (autoload_enabled is not True):
-            self.gcode.respond_error("ERROR! Cannot communicate with sensor or autoload is not enabled!")
-            self.pat9125_enabled = False
-            return False
-        self.current_time = self.timer.getCurrentTime
-        if (self.current_time - self.old_time) < 25:
-            return False
-        else:
-            dy = pat9125_y - fsensor_autoload_y
-                if dy != 0:  # dy value is nonzero
-                    if (dy > 0): # delta-y value is positive (inserting)
-                        fsensor_autoload_sum += dy
-                        fsensor_autoload_c += 3 # increment change counter by 3
-                    else if (fsensor_autoload_c > 1):
-                        fsensor_autoload_c -= 2; # decrement change counter by 2 
-                        fsensor_autoload_y = pat9125_y; # save current value
-                else if (fsensor_autoload_c > 0):
-                    fsensor_autoload_c = fsensor_autoload_c - 1
-                if (fsensor_autoload_c == 0):
-                    fsensor_autoload_sum = 0
-            # TODO what does this even do?
-            # #if 0
-            #     puts_P(_N("fsensor_check_autoload\n"));
-            #     if (fsensor_autoload_c != fsensor_autoload_c_old)
-            #         printf_P(PSTR("fsensor_check_autoload dy=%d c=%d sum=%d\n"), dy, fsensor_autoload_c, fsensor_autoload_sum);
-            # #endif
-            #	if ((fsensor_autoload_c >= 15) && (fsensor_autoload_sum > 30))
-                if ((fsensor_autoload_c >= 12) and (fsensor_autoload_sum > 20));
-            #		puts_P(_N("fsensor_check_autoload = true !!!\n"));
-                    return True
-                return False
-                    
-
-
-
-
-            
-        
+        pass    
         
 
     def DO_FILAMENT_AUTOLOAD(self,params):
@@ -188,10 +151,13 @@ class pat9125_fsensor:
             prusa_gcodes.cmd_LOAD_FILAMENT
 
 
-
     def cmd_RETURN_INFO(self, params):
         if check_pat_active is not False:
             shutter = pat9125.read_register(self.PAT9125_SHUTTER)
             frame = pat9125.read_register(self.PAT9125_FRAME)
             self.gcode.respond_info("PAT9125 INFO: Enabled: %s Shutter: %f Frame: %f Errors: %i" % (self.pat_active, shutter, frame, self.errors))
             self.gcode.respond_info("Filament Movement: ")
+
+
+def load_config(config):
+    return filament_sensor(config)
