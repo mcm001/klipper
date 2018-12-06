@@ -5,6 +5,7 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 import bus
+import logging
 
 CHIP_ID = 0x75 << 1
 REG_ID_1 = 0x00
@@ -18,13 +19,13 @@ class PAT9125:
         self.gcode = self.printer.lookup_object('gcode')
         self.gcode.register_command(
             'SENSOR_READ_ID', self.cmd_SENSOR_READ_ID)
-    def read_register(self,register_id):
-        return self.i2c.i2c_read([register_id], 1)
     def cmd_SENSOR_READ_ID(self, params):
         pr1 = self.i2c.i2c_read([REG_ID_1], 1)
         pr2 = self.i2c.i2c_read([REG_ID_2], 1)
         pid1 = bytearray(pr1['response'])
         pid2 = bytearray(pr2['response'])
+        logging.info("response example")
+        logging.info(pr1)
         e_resp = [0x31, 0x91]
         self.gcode.respond_info(
             "Sensor Test: Read [%#x,%#x], Expected [%#x,%#x]"

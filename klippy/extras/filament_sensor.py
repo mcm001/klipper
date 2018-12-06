@@ -1,14 +1,23 @@
-# Control for 602_Selector
+# Filament sensor control - pause print on runout
+# Can use an endstop or PAT9125 sensor
 #
 # Copyright (C) 2018  Matthew Morley <matthew.morley.ca@gmail.com>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
-class pat9125_watchdog:
+
+
+class filament_sensor:
+    def __init__(self,config):
+        self.printer = config.get_printer()
+        self.gcode = self.printer.lookup_object('gcode')
+        self.prusa_gcodes = self.printer.lookup_object('prusa_gcodes')
+    def pause_print(self):
+        self.gcode.respond_info("respond action:pause")
+        # TODO pause now, don't flush the move que.
+
+class pat9125_fsensor:
     def __init__(self, config):
-        #         self.tumbler_velocity = config.getfloat('tumbler_velocity', 10.)
-#         self.gcode.register_command('MOVE_SELECTOR', self.cmd_MOVE_SELECTOR)
-#     def cmd_A602(self, params):
 
         self.printer = config.get_printer()
         self.gcode = self.printer.lookup_object('gcode')
@@ -59,8 +68,11 @@ class pat9125_watchdog:
 
 
 
-        self.filament_autoload = config.getboolean('filament_autoload', default=False)
-        bool self.pat_active = self._init_9125
+        self.autoload_enabled = config.getboolean('filament_autoload', default=False)
+        self.runout_detect_enabled = config.getboolean('filament_runout', default=False)
+
+
+        self._init_9125
         # TODO throw error if can't connect
 
         # set current position to 0
@@ -78,13 +90,11 @@ class pat9125_watchdog:
         pat_PID2 = pat9125.read_register(self.PAT9125_PID2)
         if ( pat_PID1 != 0x31 ) or ( pat_PID2 != 0x91 ):
             # break, everything is broken
-            return False
+            self.pat9125_enabled = True
         else:
             self.errors = 0
-            return True
-        # TODO why does Prusa enable write protect?
-
-        # return False
+            self.pat9125_enabled = False
+            # TODO why does Prusa enable write protect? Do I need to? ETC
 
     def check_pat_active(self):
         pat_PID1 = pat9125.read_register(self.PAT9125_PID1)
@@ -121,6 +131,63 @@ class pat9125_watchdog:
 
                 self.pat9125_x += iDX
                 self.pat9125_y -= iDY # why is this flipped?
+    
+    def filament_autoload_init(self):
+        self.do_autoload = False
+        self.old_time = self.timer.getCurrentTime
+        self.fsensor_autoload_y = pat9125_y
+    
+    def check_autoload(self):
+        # check the sensor values for an autoload event
+        if (pat9125_enabled is not True) or (autoload_enabled is not True):
+            self.gcode.respond_error("ERROR! Cannot communicate with sensor or autoload is not enabled!")
+            self.pat9125_enabled = False
+            return False
+        self.current_time = self.timer.getCurrentTime
+        if (self.current_time - self.old_time) < 25:
+            return False
+        else:
+            dy = pat9125_y - fsensor_autoload_y
+                if dy != 0:  # dy value is nonzero
+                    if (dy > 0): # delta-y value is positive (inserting)
+                        fsensor_autoload_sum += dy
+                        fsensor_autoload_c += 3 # increment change counter by 3
+                    else if (fsensor_autoload_c > 1):
+                        fsensor_autoload_c -= 2; # decrement change counter by 2 
+                        fsensor_autoload_y = pat9125_y; # save current value
+                else if (fsensor_autoload_c > 0):
+                    fsensor_autoload_c = fsensor_autoload_c - 1
+                if (fsensor_autoload_c == 0):
+                    fsensor_autoload_sum = 0
+            # TODO what does this even do?
+            # #if 0
+            #     puts_P(_N("fsensor_check_autoload\n"));
+            #     if (fsensor_autoload_c != fsensor_autoload_c_old)
+            #         printf_P(PSTR("fsensor_check_autoload dy=%d c=%d sum=%d\n"), dy, fsensor_autoload_c, fsensor_autoload_sum);
+            # #endif
+            #	if ((fsensor_autoload_c >= 15) && (fsensor_autoload_sum > 30))
+                if ((fsensor_autoload_c >= 12) and (fsensor_autoload_sum > 20));
+            #		puts_P(_N("fsensor_check_autoload = true !!!\n"));
+                    return True
+                return False
+                    
+
+
+
+
+            
+        
+        
+
+    def DO_FILAMENT_AUTOLOAD(self,params):
+        self.filament_autoload_init
+        
+        if self.do_autoload == True:
+            self.do_autoload = False
+            # Do gcode script for autoload
+            prusa_gcodes.cmd_LOAD_FILAMENT
+
+
 
     def cmd_RETURN_INFO(self, params):
         if check_pat_active is not False:
@@ -128,4 +195,3 @@ class pat9125_watchdog:
             frame = pat9125.read_register(self.PAT9125_FRAME)
             self.gcode.respond_info("PAT9125 INFO: Enabled: %s Shutter: %f Frame: %f Errors: %i" % (self.pat_active, shutter, frame, self.errors))
             self.gcode.respond_info("Filament Movement: ")
-    
