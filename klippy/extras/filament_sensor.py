@@ -47,9 +47,35 @@ class pat9125_fsensor:
 
         # TODO what is this magic code that Prusa needs to send to the sensor? 
         # see line 66 of pat9125.c
-        self.pat9125_init_seq2 = [0x06, 0x028, 0x33, 0x0d0, 0x36, 0x0c2, 0x3e, 0x001, 0x3f, 0x015, 0x41, 0x032, 0x42, 0x03b, 0x43, 0x0f2, 0x44, 0x03b, 0x45, 0x0f2, 0x46, 0x022, 0x47, 0x03b, 0x48, 0x0f2, 0x49, 0x03b, 0x4a, 0x0f0, 0x58, 0x098, 0x59, 0x00c, 0x5a, 0x008, 0x5b, 0x00c, 0x5c, 0x008, 0x61, 0x010, 0x67, 0x09b, 0x6e, 0x022, 0x71, 0x007, 0x72, 0x008, 0x0ff]
+        self.pat9125_init_seq2 = [
+        [0x06, 0x028],
+    	[0x33, 0x0d0],
+    	[0x36, 0x0c2],
+    	[0x3e, 0x001],
+    	[0x3f, 0x015],
+    	[0x41, 0x032],
+    	[0x42, 0x03b],
+    	[0x43, 0x0f2],
+    	[0x44, 0x03b],
+    	[0x45, 0x0f2],
+    	[0x46, 0x022],
+    	[0x47, 0x03b],
+    	[0x48, 0x0f2],
+    	[0x49, 0x03b],
+    	[0x4a, 0x0f0],
+    	[0x58, 0x098],
+    	[0x59, 0x00c],
+    	[0x5a, 0x008],
+    	[0x5b, 0x00c],
+    	[0x5c, 0x008],
+    	[0x61, 0x010],
+    	[0x67, 0x09b],
+    	[0x6e, 0x022],
+    	[0x71, 0x007],
+    	[0x72, 0x008],
+	    # stopper, wait what? WHAT???? TODO how does the stopper work
+        0x0ff]
 
-        # TODO is this even how you multiline list?
         pat9125_init_seq1 = [ PAT9125_WP, 0x5a,
         # Set the X resolution to zero to let the sensor know that it could safely ignore movement in the X axis.
         PAT9125_RES_X, PAT9125_XRES,
@@ -82,55 +108,35 @@ class pat9125_fsensor:
         self.gcode.register_command('PAT9125_STATUS', self.cmd_RETURN_INFO)
 
     def _init_9125(self, params):
-        # TODO enable I2c
+        pat9125.check_pat_active
 
-        # verify responce ID
-        # TODO make read_register function
-        pat_PID1 = pat9125.read_register(self.PAT9125_PID1)
-        pat_PID2 = pat9125.read_register(self.PAT9125_PID2)
-        if ( pat_PID1 != 0x31 ) or ( pat_PID2 != 0x91 ):
-            # break, everything is broken
-            self.pat9125_enabled = True
-        else:
-            self.errors = 0
-            self.pat9125_enabled = False
-            # TODO why does Prusa enable write protect? Do I need to? ETC
+        # TODO send the magical code
 
-    def check_pat_active(self):
-        pat_PID1 = pat9125.read_register(self.PAT9125_PID1)
-        pat_PID2 = pat9125.read_register(self.PAT9125_PID2)
-        if ( pat_PID1 != 0x31 ) or ( pat_PID2 != 0x91 ):
-            # break, everything is broken
-            return False
-            self.gcode.respond_error("ERROR: PAT9125 is not connected!")
-            # TODO throw an error for real
-
-        else:
-            return True
+        
     
     def update_y(self):
-        if check_pat_active = True:
+        pat9125.check_pat_active
+        if pat9125.pat9125_active is True:
             check_motion = pat9125.read_register(self.PAT9125_MOTION)
             check_frame = pat9125.read_register(self.PAT9125_FRAME)
             check_shutter = pat9125.read_register(self.PAT9125_SHUTTER)
 
             # whatever # if (ucMotion & 0x80) even means
             # TODO fix this part lmao
-            if True:
-                delta_xl = pat9125.read_register(self.PAT9125_DELTA_XL)
-                delta_yl = pat9125.read_register(self.PAT9125_DELTA_YL)
-                delta_xyh = pat9125.read_register(self.PAT9125_DELTA_XYH)
+            # delta_xl = pat9125.read_register(self.PAT9125_DELTA_XL)
+            delta_yl = pat9125.read_register(self.PAT9125_DELTA_YL)
+            # delta_xyh = pat9125.read_register(self.PAT9125_DELTA_XYH)
 
-                # TODO What does this mean (in c) iDX = deltaXL | ((delta_xyh <<4) & 0xf00)
-                # iDY = deltaYL | ((delta_xyh <<8) & 0xf00)
-                # see line 186 of prusa's pat9125.c
+            # TODO What does this mean (in c) iDX = deltaXL | ((delta_xyh <<4) & 0xf00)
+            # iDY = deltaYL | ((delta_xyh <<8) & 0xf00)
+            # see line 186 of prusa's pat9125.c
 
-                # TODO What would happen if I were to just sketchy skirt this boi
-                iDX = delta_xl
-                iDY = delta_yl
+            # TODO What would happen if I were to just sketchy skirt this boi
+            # iDX = delta_xl
+            iDY = delta_yl
 
-                self.pat9125_x += iDX
-                self.pat9125_y -= iDY # why is this flipped?
+            # self.pat9125_x += iDX
+            self.pat9125_y -= iDY # why is this flipped? (because the sensor is sideways silly)
     
     def filament_autoload_init(self):
         self.do_autoload = False
@@ -151,13 +157,8 @@ class pat9125_fsensor:
             prusa_gcodes.cmd_LOAD_FILAMENT
 
 
-    def cmd_RETURN_INFO(self, params):
-        if check_pat_active is not False:
-            shutter = pat9125.read_register(self.PAT9125_SHUTTER)
-            frame = pat9125.read_register(self.PAT9125_FRAME)
-            self.gcode.respond_info("PAT9125 INFO: Enabled: %s Shutter: %f Frame: %f Errors: %i" % (self.pat_active, shutter, frame, self.errors))
-            self.gcode.respond_info("Filament Movement: ")
 
 
+# TODO build config
 def load_config(config):
     return filament_sensor(config)
