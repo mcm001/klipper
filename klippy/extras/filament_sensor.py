@@ -5,6 +5,7 @@
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
+import logging
 
 
 class filament_sensor:
@@ -18,143 +19,47 @@ class filament_sensor:
 
 class pat9125_fsensor:
     def __init__(self, config):
-
         self.printer = config.get_printer()
         self.gcode = self.printer.lookup_object('gcode')
         self.pat9125 = self.printer.lookup_object('pat9125')
-
-        # List of registers for the PAT9125
-        self.PAT9125_PID1			    = 0x00
-        self.PAT9125_PID2			    = 0x01
-        self.PAT9125_MOTION			    = 0x02
-        self.PAT9125_DELTA_XL		    = 0x03
-        self.PAT9125_DELTA_YL		    = 0x04
-        self.PAT9125_MODE			    = 0x05
-        self.PAT9125_CONFIG			    = 0x06
-        self.PAT9125_WP				    = 0x09
-        self.PAT9125_SLEEP1			    = 0x0a
-        self.PAT9125_SLEEP2			    = 0x0b
-        self.PAT9125_RES_X			    = 0x0d
-        self.PAT9125_RES_Y			    = 0x0e
-        self.PAT9125_DELTA_XYH		    = 0x12
-        self.PAT9125_SHUTTER			= 0x14
-        self.PAT9125_FRAME			    = 0x17
-        self.PAT9125_ORIENTATION		= 0x19
-        self.PAT9125_BANK_SELECTION	    = 0x7f
-
-        self.PAT9125_XRES = 0
-        self.PAT9125_YRES = 240
-
-        # TODO what is this magic code that Prusa needs to send to the sensor? 
-        # see line 66 of pat9125.c
-        self.pat9125_init_seq2 = [
-        [0x06, 0x028],
-    	[0x33, 0x0d0],
-    	[0x36, 0x0c2],
-    	[0x3e, 0x001],
-    	[0x3f, 0x015],
-    	[0x41, 0x032],
-    	[0x42, 0x03b],
-    	[0x43, 0x0f2],
-    	[0x44, 0x03b],
-    	[0x45, 0x0f2],
-    	[0x46, 0x022],
-    	[0x47, 0x03b],
-    	[0x48, 0x0f2],
-    	[0x49, 0x03b],
-    	[0x4a, 0x0f0],
-    	[0x58, 0x098],
-    	[0x59, 0x00c],
-    	[0x5a, 0x008],
-    	[0x5b, 0x00c],
-    	[0x5c, 0x008],
-    	[0x61, 0x010],
-    	[0x67, 0x09b],
-    	[0x6e, 0x022],
-    	[0x71, 0x007],
-    	[0x72, 0x008],
-	    # stopper, wait what? WHAT???? TODO how does the stopper work
-        0x0ff]
-
-        pat9125_init_seq1 = [ PAT9125_WP, 0x5a,
-        # Set the X resolution to zero to let the sensor know that it could safely ignore movement in the X axis.
-        PAT9125_RES_X, PAT9125_XRES,
-        # Set the Y resolution to a maximum (or nearly a maximum).
-        PAT9125_RES_Y, PAT9125_YRES,
-        # Set 12-bit X/Y data format.
-        PAT9125_ORIENTATION, 0x04,
-        #	PAT9125_ORIENTATION, 0x04 | (xinv?0x08:0) | (yinv?0x10:0), //!? direction switching does not work
-        # Now continues the magic sequence from the PAT912EL Application Note: Firmware Guides for Tracking Optimization.
-        0x5e, 0x08,
-        0x20, 0x64,
-        0x2b, 0x6d,
-        0x32, 0x2f,
-        # stopper
-        0x0ff]
-
-
+        self.prusa_gcodes = self.printer.lookup_object('prusa_gcodes')
 
         self.autoload_enabled = config.getboolean('filament_autoload', default=False)
         self.runout_detect_enabled = config.getboolean('filament_runout', default=False)
 
-
-        self._init_9125
-        # TODO throw error if can't connect
-
         # set current position to 0
         self.pat9125_x = 0
         self.pat9125_y = 0
+        self.do_autoload = False
+        # self.gcode.register_command('PAT9125_STATUS', self.cmd_RETURN_INFO) 
 
-        self.gcode.register_command('PAT9125_STATUS', self.cmd_RETURN_INFO)
-
-    def _init_9125(self, params):
-        pat9125.check_pat_active
-
-        # TODO send the magical code
-
-        
-    
-    def update_y(self):
-        pat9125.check_pat_active
-        if pat9125.pat9125_active is True:
-            check_motion = pat9125.read_register(self.PAT9125_MOTION)
-            check_frame = pat9125.read_register(self.PAT9125_FRAME)
-            check_shutter = pat9125.read_register(self.PAT9125_SHUTTER)
-
-            # whatever # if (ucMotion & 0x80) even means
-            # TODO fix this part lmao
-            # delta_xl = pat9125.read_register(self.PAT9125_DELTA_XL)
-            delta_yl = pat9125.read_register(self.PAT9125_DELTA_YL)
-            # delta_xyh = pat9125.read_register(self.PAT9125_DELTA_XYH)
-
-            # TODO What does this mean (in c) iDX = deltaXL | ((delta_xyh <<4) & 0xf00)
-            # iDY = deltaYL | ((delta_xyh <<8) & 0xf00)
-            # see line 186 of prusa's pat9125.c
-
-            # TODO What would happen if I were to just sketchy skirt this boi
-            # iDX = delta_xl
-            iDY = delta_yl
-
-            # self.pat9125_x += iDX
-            self.pat9125_y -= iDY # why is this flipped? (because the sensor is sideways silly)
     
     def filament_autoload_init(self):
-        self.do_autoload = False
+        self.autoload_enabled = False
         self.old_time = self.timer.getCurrentTime
-        self.fsensor_autoload_y = pat9125_y
+        self.fsensor_autoload_y = self.pat9125_y
     
     def check_autoload(self):
         # check the sensor values for an autoload event
-        pass    
+        pat9125_register_dict = self.pat9125.pat9125_update()
+        if pat9125_register_dict is None:
+            # TODO throw error
+            logging.error("Error on reading pat9125 registers!")
+                
         
 
-    def DO_FILAMENT_AUTOLOAD(self,params):
+
+        if (self.autoload_enabled is True) and (self.do_autoload is True):
+            self.DO_FILAMENT_AUTOLOAD
+        
+
+    def DO_FILAMENT_AUTOLOAD(self,params): # dew the autoload
         self.filament_autoload_init
         
         if self.do_autoload == True:
             self.do_autoload = False
             # Do gcode script for autoload
-            prusa_gcodes.cmd_LOAD_FILAMENT
+            self.prusa_gcodes.cmd_LOAD_FILAMENT
 
 
 

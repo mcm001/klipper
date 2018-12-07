@@ -63,7 +63,6 @@ class PAT9125:
         self.runout_callback = None
         self.initialized = False
         self.is_autoload = False
-        self.product_id = 0
         self.refresh_time = .2
         self.pat9125_timer = self.reactor.register_timer(
             self._pat9125_update_event)
@@ -85,7 +84,7 @@ class PAT9125:
         if type(reg) is str:
             regs = [PAT9125_REGS[reg]]
         elif type(reg) is list:
-            regs = reg
+            regs = list(reg)
         else:
             regs = [reg]
         params = self.i2c.i2c_read(regs, read_len)
@@ -95,12 +94,17 @@ class PAT9125:
         # register or an 8-bit address.  Data may be a list
         # of 8-bit values, or a single 8-bit value
         if type(data) is not list:
-            data = [data & 0xFF]
-        if type(reg) is str:
-            data.insert(0, PAT9125_REGS[reg])
+            out_data = [data & 0xFF]
         else:
-            data.insert(0, reg)
-        self.i2c.i2c_write(data, minclock, reqclock)
+            out_data = list(data)
+
+        if type(reg) is str:
+            out_data.insert(0, PAT9125_REGS[reg])
+        elif type(reg) is list:
+            out_data = reg + out_data
+        else:
+            out_data.insert(0, reg)
+        self.i2c.i2c_write(out_data, minclock, reqclock)
     def set_runout_callback(self, callback):
         self.runout_callback = callback
     def start_sample_timer(self):
@@ -109,46 +113,38 @@ class PAT9125:
         self.reactor.update_timer(self.pat9125_timer, self.reactor.NEVER)
     def _pat9125_init(self):
         mcu = self.i2c.get_mcu()
-        pid = self.read_register('PID1', 2)
-        self.product_id = (pid[1] << 8) | pid[0]
+        self.initialized = False
 
         # Read and verify product ID
-        if self.product_id != PAT9125_PRODUCT_ID:
-            pid = self.read_register('PID1', 2)
-            self.product_id = (pid[1] << 8) | pid[0]
-            if self.product_id != PAT9125_PRODUCT_ID:
-                logging.info(
-                    "Product ID Mismatch Expected: %d, Recd: %d"
-                    % PAT9125_PRODUCT_ID, self.product_id)
-                self.initialized = False
+        if not self.check_product_id():
+            logging.info("Rechecking ID...")
+            if not self.check_product_id():
                 return
+
         self.write_register('BANK_SELECTION', 0x00)
         self.write_register('CONFIG', 0x97)
 
         print_time = mcu.estimated_print_time(self.reactor.monotonic())
         minclock = mcu.print_time_to_clock(print_time + 1.)
-        self._send_init_sequence(PAT9125_INIT1, minclock)
+        if not (self._send_init_sequence(PAT9125_INIT1, minclock)):
+            return
 
         print_time = mcu.estimated_print_time(self.reactor.monotonic())
         minclock = mcu.print_time_to_clock(print_time + .01)
         self.write_register('BANK_SELECTION', 0x01, minclock=minclock)
-        self._send_init_sequence(PAT9125_INIT2)
+        if not self._send_init_sequence(PAT9125_INIT2):
+            return
 
         self.write_register('BANK_SELECTION', 0x00)
         self.write_register('WP', 0x00)
-        pid = self.read_register('PID1', 2)
 
-        if self.product_id != ((pid[1] << 8) | pid[0]):
-            logging.info(
-                "Product ID Mismatch Expected: %d, Recd: %d"
-                % self.product_id, ((pid[1] << 8) | pid[0]))
-            self.initialized = False
+        if not self.check_product_id():
             return
 
         self.write_register('RES_X', PAT9125_XRES)
         self.write_register('RES_Y', PAT9125_YRES)
         self.initialized = True
-        logging.info("PAT9125 Initialiation Success")
+        logging.info("PAT9125 Initialization Success")
     def _send_init_sequence(self, sequence, delay=0):
         for addr, data in sequence:
             if delay:
@@ -158,7 +154,7 @@ class PAT9125:
                 self.write_register(addr, data)
             r_data = self.read_register(addr, len(data))
             for w_byte, r_byte in zip(data, r_data):
-                if w_byte != r_byte:
+                if w_byte & 0xFF != r_byte & 0xFF:
                     logging.info(
                         "PAT9125 Read/Write mismatch, register (%#x)"
                         % (addr))
@@ -173,6 +169,33 @@ class PAT9125:
         # If self.runout_callback is not None:
         #   self.runout_callback()
         return eventtime + self.refresh_time
+    def check_product_id(self):
+        pid = self.read_register('PID1', 2)
+        if ((pid[1] << 8) | pid[0]) != PAT9125_PRODUCT_ID:
+            logging.info(
+                "Product ID Mismatch Expected: %d, Recd: %d"
+                % PAT9125_PRODUCT_ID, ((pid[1] << 8) | pid[0]))
+            return False
+        else:
+            return True
+    def pat9125_update(self):
+            # XXX - set option to retreive response time in read_register
+            # read data from 0x00 to 0x17
+            data = self.read_register('PID1', 24)
+            if ((data[1] << 8) | data[0]) != PAT9125_PRODUCT_ID:
+                logging.info(
+                    "Product ID Mismatch Expected: %d, Recd: %d"
+                    % PAT9125_PRODUCT_ID, ((data[1] << 8) | data[0]))
+                self.initialized = False
+                return None
+            # XXX - extract values
+            results = {
+                'MOTION': 0, 'DELTA_XL': 0, 'DELTA_YL': 0, 'DELTA_XYH': 0,
+                'FRAME': 0, 'SHUTTER': 0}
+            for key in results:
+                results[key] = data[PAT9125_REGS[key]]
+            return results
+
     def cmd_SENSOR_READ_ID(self, params):
         product_id = self.read_register('PID1', 2)
         self.gcode.respond_info(
