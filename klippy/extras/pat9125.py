@@ -1,6 +1,6 @@
 # PAT9125 Filament Sensor
 #
-# Copyright (C) 2018  Eric Callahan <arksine.code@gmail.com>
+# Copyright (C) 2018  Eric Callahan <arksine.code@gmail.com> and Matthew Morley <matthew.morley.ca@gmail.com>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
@@ -11,6 +11,7 @@ CHIP_ADDR = 0x75 << 1
 PAT9125_PRODUCT_ID = (0x91 << 8) | 0x31
 PAT9125_XRES = 0
 PAT9125_YRES = 240
+
 
 PAT9125_REGS = {
     'PID1': 0x00, 'PID2': 0x01, 'MOTION': 0x02,
@@ -60,6 +61,7 @@ class PAT9125:
         self.gcode = self.printer.lookup_object('gcode')
         self.watchdog = WatchDog(config, self)
         self.initialized = False
+        
         self.gcode.register_command(
             'SENSOR_READ_ID', self.cmd_SENSOR_READ_ID)
         self.gcode.register_command(
@@ -141,6 +143,12 @@ class PAT9125:
 
         self.write_register('RES_X', PAT9125_XRES)
         self.write_register('RES_Y', PAT9125_YRES)
+
+        self.pat9125_x = 0
+        self.pat9125_y = 0
+
+
+
         self.initialized = True
         logging.info("PAT9125 Initialization Success")
     def _send_init_sequence(self, sequence):
@@ -174,14 +182,34 @@ class PAT9125:
                 % PAT9125_PRODUCT_ID, ((data[1] << 8) | data[0]))
             self.initialized = False
             return None
-        # XXX - extract values
-        results = {
-            'MOTION': 0, 'DELTA_XL': 0, 'DELTA_YL': 0, 'DELTA_XYH': 0,
-            'FRAME': 0, 'SHUTTER': 0}
-        for key in results:
-            results[key] = data[PAT9125_REGS[key]]
-        results['MCU_TIME'] = 0
-        return results
+        else:
+            self.initialized = True
+            # XXX - extract values
+            results = {
+                'MOTION': 0, 'DELTA_XL': 0, 'DELTA_YL': 0, 'DELTA_XYH': 0,
+                'FRAME': 0, 'SHUTTER': 0}
+            for key in results:
+                results[key] = data[PAT9125_REGS[key]]
+            results['MCU_TIME'] = 0
+            return results
+
+    def pat9125_update_y(self):
+        pat_dict = self.pat9125_update()
+        if self.initialized is not True:
+            logging.error("PAT not inilized, can't update y")
+            return 
+        else:
+            ucMotion = pat_dict['MOTION']
+            if (ucMotion & 0x80) != 0: 
+                delta_yl = pat_dict['DELTA_YL']
+                delta_xyh = pat_dict['DELTA_XYH']
+                DY = delta_yl | ((delta_xyh << 8) & 0xf00)
+                if ( DY & 0x800 ):
+                    DY -= 4096
+                self.pat9125_y -= DY
+                return pat_dict
+
+            
     def cmd_SENSOR_READ_ID(self, params):
         product_id = self.read_register('PID1', 2)
         self.gcode.respond_info(
@@ -200,6 +228,71 @@ class PAT9125:
         data = self.read_register(reg, 1)[0]
         self.gcode.respond_info(
             "Value at register [%#X]: %d" % (reg, data))
+
+class pat9125_fsensor:
+    def __init__(self, config):
+        self.printer = config.get_printer()
+        self.gcode = self.printer.lookup_object('gcode')
+        self.pat9125 = self.printer.lookup_object('pat9125')
+        self.prusa_gcodes = self.printer.lookup_object('prusa_gcodes')
+
+        self.autoload_enabled = config.getboolean('filament_autoload', default=False)
+        self.runout_detect_enabled = config.getboolean('filament_runout', default=False)
+        self.inverted = config.get('inverted', default=False)
+
+        self.do_autoload_now = False
+
+    
+    def filament_autoload_init(self):
+        self.fsensor_autoload_y = self.pat9125.pat9125_y
+        self.fsensor_autoload_sum = 0
+        self.fsensor_autoload_c = 0
+        pat9125_register_dict = self.pat9125.pat9125_update()
+        self.MCU_TIME = pat9125_register_dict['MCU_TIME']
+    
+    def check_autoload(self):
+        # check the sensor values for an autoload event
+        pat9125_register_dict = self.pat9125.pat9125_update_y()
+        delta_time = ((pat9125_register_dict['MCU_TIME'] - self.MCU_TIME) * 1000)
+        self.MCU_TIME = pat9125_register_dict['MCU_TIME'] # cache the MCU time on last calculation
+
+
+        if delta_time < 50: # If update is too quack (no, its not a typ0)
+            logging.info("Skipping this update, update too recent")
+            return
+        else: # Ogres are like onions
+            old_y = self.pat9125.pat9125_y
+            new_y = pat9125_register_dict['DELTA_YL']
+            dy = new_y - old_y # delta Y movement
+            self.pat9125_y = pat9125_register_dict['DELTA_YL']
+            delta_time = pat9125_register_dict['DELTA_TIME']
+            if ( dy != 0 ): # onions have layers
+                if (dy > 0): # delta-y value is positive (inserting)
+                    self.fsensor_autoload_sum += dy
+                    self.fsensor_autoload_c += 3 # increment change counter by 3
+                elif (self.fsensor_autoload_c > 1) :
+                    self.fsensor_autoload_c -= 2 # decrement change counter by 2 
+                self.pat9125.pat9125_y = new_y
+        
+        if (self.fsensor_autoload_c >= 12) and (self.fsensor_autoload_sum > 20):
+            self.do_autoload_now = True
+        
+
+    def DO_FILAMENT_AUTOLOAD(self,params): # dew the autoload
+        self.filament_autoload_init
+        # while not printing and every so often
+        while True:
+            if (self.autoload_enabled is not True):
+                return
+            if self.do_autoload_now is True:
+                self.do_autoload_now = False
+                # Do gcode script for autoload
+                self.prusa_gcodes.cmd_LOAD_FILAMENT
+            else:
+                self.check_autoload
+
+
+
 
 class WatchDog:
     def __init__(self, config, pat9125):

@@ -17,63 +17,6 @@ class filament_sensor:
         self.gcode.respond_info("respond action:pause")
         # TODO pause now, don't flush the move que.
 
-class pat9125_fsensor:
-    def __init__(self, config):
-        self.printer = config.get_printer()
-        self.gcode = self.printer.lookup_object('gcode')
-        self.pat9125 = self.printer.lookup_object('pat9125')
-        self.prusa_gcodes = self.printer.lookup_object('prusa_gcodes')
-
-        self.autoload_enabled = config.getboolean('filament_autoload', default=False)
-        self.runout_detect_enabled = config.getboolean('filament_runout', default=False)
-        self.inverted = config.get('inverted', default=False)
-
-        # set current position to 0
-        self.pat9125_x = 0
-        self.pat9125_y = 0
-        self.do_autoload = False
-        # self.gcode.register_command('PAT9125_STATUS', self.cmd_RETURN_INFO) 
-
-    
-    def filament_autoload_init(self):
-        self.autoload_enabled = False
-        self.old_time = self.timer.getCurrentTime
-        self.fsensor_autoload_y = self.pat9125_y
-        pat9125_register_dict = self.pat9125.pat9125_update()
-        self.MCU_TIME = pat9125_register_dict['MCU_TIME']
-    
-    def check_autoload(self):
-        # check the sensor values for an autoload event
-        pat9125_register_dict = self.pat9125.pat9125_update()
-        if pat9125_register_dict is None:
-            # TODO throw error
-            logging.error("Error on reading pat9125 registers!")
-            return
-        else: # It's else statements all the way down
-            if (pat9125_register_dict['MCU_TIME'] - self.MCU_TIME) < 50: # If update is too quack (no, its not a typ0)
-                logging.info("Skipping this update, update too recent")
-                return
-            else: # Oigers are like onions
-                self.MCU_TIME = pat9125_register_dict['MCU_TIME'] # cache the MCU time on last calculation
-                old_y = self.pat9125_y
-                new_y = pat9125_register_dict['DELTA_YL']
-                dy = new_y - old_y # delta Y movement
-                self.pat9125_y = pat9125_register_dict['DELTA_YL']
-                delta_time = pat9125_register_dict['DELTA_TIME']
-                if delta
-
-
-        if (self.autoload_enabled is True) and (self.do_autoload is True):
-            self.DO_FILAMENT_AUTOLOAD
-        
-
-    def DO_FILAMENT_AUTOLOAD(self,params): # dew the autoload
-        self.filament_autoload_init
-        
-        if self.do_autoload == True:
-            self.do_autoload = False
-            # Do gcode script for autoload
-            self.prusa_gcodes.cmd_LOAD_FILAMENT
 
 
 
