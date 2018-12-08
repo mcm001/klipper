@@ -45,8 +45,8 @@ class pat9125_fsensor:
         if pat9125_register_dict is None:
             # TODO throw error
             logging.error("Error on reading pat9125 registers!")
-                
-        
+        else: # It's else statements all the way down
+            
 
 
         if (self.autoload_enabled is True) and (self.do_autoload is True):
