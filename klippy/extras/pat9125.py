@@ -180,6 +180,7 @@ class PAT9125:
             'FRAME': 0, 'SHUTTER': 0}
         for key in results:
             results[key] = data[PAT9125_REGS[key]]
+        results['MCU_TIME'] = 0
         return results
     def cmd_SENSOR_READ_ID(self, params):
         product_id = self.read_register('PID1', 2)
@@ -229,7 +230,7 @@ class WatchDog:
     def _watchdog_update_event(self, eventtime):
         # gets current kinematic position, calculates delta
         current_pos = self.kinematics.calc_position()
-        delta_e = current_pos[3] - self.last_position[3]
+        self.delta_e = current_pos[3] - self.last_position[3]
         # XXX - put sampling code here!
         # When it is determined that filament has run out, execute the
         # callback, ie:
