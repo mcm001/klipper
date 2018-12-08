@@ -190,7 +190,7 @@ class PAT9125:
                 'FRAME': 0, 'SHUTTER': 0}
             for key in results:
                 results[key] = data[PAT9125_REGS[key]]
-            results['MCU_TIME'] = 0
+            # results['MCU_TIME'] = 0
             return results
 
     def pat9125_update_y(self):
@@ -249,47 +249,48 @@ class pat9125_fsensor:
         self.fsensor_autoload_c = 0
         pat9125_register_dict = self.pat9125.pat9125_update()
         self.MCU_TIME = pat9125_register_dict['MCU_TIME']
+        self.do_autoload_now = False
     
     def check_autoload(self):
         # check the sensor values for an autoload event
         pat9125_register_dict = self.pat9125.pat9125_update_y()
-        delta_time = ((pat9125_register_dict['MCU_TIME'] - self.MCU_TIME) * 1000)
-        self.MCU_TIME = pat9125_register_dict['MCU_TIME'] # cache the MCU time on last calculation
+        # delta_time = ((pat9125_register_dict['MCU_TIME'] - self.MCU_TIME) * 1000)
+        # self.MCU_TIME = pat9125_register_dict['MCU_TIME'] # cache the MCU time on last calculation
 
 
-        if delta_time < 50: # If update is too quack (no, its not a typ0)
-            logging.info("Skipping this update, update too recent")
-            return
-        else: # Ogres are like onions
-            old_y = self.pat9125.pat9125_y
-            new_y = pat9125_register_dict['DELTA_YL']
-            dy = new_y - old_y # delta Y movement
-            self.pat9125_y = pat9125_register_dict['DELTA_YL']
-            delta_time = pat9125_register_dict['DELTA_TIME']
-            if ( dy != 0 ): # onions have layers
-                if (dy > 0): # delta-y value is positive (inserting)
-                    self.fsensor_autoload_sum += dy
-                    self.fsensor_autoload_c += 3 # increment change counter by 3
-                elif (self.fsensor_autoload_c > 1) :
-                    self.fsensor_autoload_c -= 2 # decrement change counter by 2 
-                self.pat9125.pat9125_y = new_y
+        # if delta_time < 50: # If update is too quack (no, its not a typ0)
+            # logging.info("Skipping this update, update too recent")
+            # return
+        # else: # Ogres are like onions
+        old_y = self.pat9125.pat9125_y
+        new_y = pat9125_register_dict['DELTA_YL']
+        dy = new_y - old_y # delta Y movement
+        self.pat9125_y = pat9125_register_dict['DELTA_YL']
+        # delta_time = pat9125_register_dict['DELTA_TIME']
+        if ( dy != 0 ): # onions have layers
+            if (dy > 0): # delta-y value is positive (inserting)
+                self.fsensor_autoload_sum += dy
+                self.fsensor_autoload_c += 3 # increment change counter by 3
+            elif (self.fsensor_autoload_c > 1) :
+                self.fsensor_autoload_c -= 2 # decrement change counter by 2 
+            self.pat9125.pat9125_y = new_y
         
         if (self.fsensor_autoload_c >= 12) and (self.fsensor_autoload_sum > 20):
             self.do_autoload_now = True
         
 
     def DO_FILAMENT_AUTOLOAD(self,params): # dew the autoload
-        self.filament_autoload_init
         # while not printing and every so often
-        while True:
-            if (self.autoload_enabled is not True):
-                return
-            if self.do_autoload_now is True:
-                self.do_autoload_now = False
-                # Do gcode script for autoload
-                self.prusa_gcodes.cmd_LOAD_FILAMENT
-            else:
-                self.check_autoload
+        if (self.autoload_enabled is not True):
+            return
+        if self.do_autoload_now is True:
+            self.do_autoload_now = False
+            # Do gcode script for autoload
+            self.prusa_gcodes.cmd_LOAD_FILAMENT
+            return True
+            self.gcode.respond_info("Autoload detected!")
+        else:
+            self.check_autoload
 
 
 
@@ -334,9 +335,11 @@ class WatchDog:
     cmd_AUTOLOAD_FILAMENT_help = \
         "Enable Autoload when PAT9125 detects filament"
     def cmd_AUTOLOAD_FILAMENT(self, params):
-        self.is_autoload = True
-        # XXX - do autoload stuff
-        self.is_autoload = False
+        pat9125_fsensor.filament_autoload_init
+        pat9125_fsensor.DO_FILAMENT_AUTOLOAD
+        self.reactor.pause(self.reactor.monotonic() + .1)
+
+        
 
 def load_config(config):
     return PAT9125(config)

@@ -20,7 +20,6 @@ class filament_sensor:
 
 
 
-
 # TODO build config
 def load_config(config):
     return filament_sensor(config)
