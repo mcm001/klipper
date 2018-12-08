@@ -275,6 +275,8 @@ class pat9125_fsensor:
                 self.fsensor_autoload_c -= 2 # decrement change counter by 2 
             self.pat9125.pat9125_y = new_y
         
+        self.gcode.respond_info("Autoload count: %s Autoload sum: %s, delta y: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, self.pat9125.pat9125_y))
+
         if (self.fsensor_autoload_c >= 12) and (self.fsensor_autoload_sum > 20):
             self.do_autoload_now = True
         
@@ -286,9 +288,9 @@ class pat9125_fsensor:
         if self.do_autoload_now is True:
             self.do_autoload_now = False
             # Do gcode script for autoload
-            self.prusa_gcodes.cmd_LOAD_FILAMENT
-            return True
+            # self.prusa_gcodes.cmd_LOAD_FILAMENT
             self.gcode.respond_info("Autoload detected!")
+            return True
         else:
             self.check_autoload
 
