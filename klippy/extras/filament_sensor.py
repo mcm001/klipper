@@ -26,6 +26,7 @@ class pat9125_fsensor:
 
         self.autoload_enabled = config.getboolean('filament_autoload', default=False)
         self.runout_detect_enabled = config.getboolean('filament_runout', default=False)
+        self.inverted = config.get('inverted', default=False)
 
         # set current position to 0
         self.pat9125_x = 0
@@ -38,6 +39,8 @@ class pat9125_fsensor:
         self.autoload_enabled = False
         self.old_time = self.timer.getCurrentTime
         self.fsensor_autoload_y = self.pat9125_y
+        pat9125_register_dict = self.pat9125.pat9125_update()
+        self.MCU_TIME = pat9125_register_dict['MCU_TIME']
     
     def check_autoload(self):
         # check the sensor values for an autoload event
@@ -45,8 +48,19 @@ class pat9125_fsensor:
         if pat9125_register_dict is None:
             # TODO throw error
             logging.error("Error on reading pat9125 registers!")
+            return
         else: # It's else statements all the way down
-            
+            if (pat9125_register_dict['MCU_TIME'] - self.MCU_TIME) < 50: # If update is too quack (no, its not a typ0)
+                logging.info("Skipping this update, update too recent")
+                return
+            else: # Oigers are like onions
+                self.MCU_TIME = pat9125_register_dict['MCU_TIME'] # cache the MCU time on last calculation
+                old_y = self.pat9125_y
+                new_y = pat9125_register_dict['DELTA_YL']
+                dy = new_y - old_y # delta Y movement
+                self.pat9125_y = pat9125_register_dict['DELTA_YL']
+                delta_time = pat9125_register_dict['DELTA_TIME']
+                if delta
 
 
         if (self.autoload_enabled is True) and (self.do_autoload is True):
