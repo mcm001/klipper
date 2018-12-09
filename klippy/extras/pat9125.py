@@ -298,7 +298,7 @@ class WatchDog:
                 DY = delta_yl | ((delta_xyh << 8) & 0xf00)
                 if ( DY & 0x800 ):
                     DY -= 4096
-                self.pat9125_y -= DY
+                self.pat9125.pat9125_y -= DY
                 return pat_dict
 
     def filament_autoload_init(self):
