@@ -286,7 +286,8 @@ class WatchDog:
 
     def pat9125_update_y(self):
         pat_dict = self.pat9125.pat9125_update()
-        if self.pat9125.initialized is not True:
+        # if self.pat9125.initialized is not True:
+        if pat_dict is None:
             logging.error("PAT not inilized, can't update y")
             return 
         else:
@@ -304,35 +305,38 @@ class WatchDog:
         self.fsensor_autoload_y = self.pat9125.pat9125_y
         self.fsensor_autoload_sum = 0
         self.fsensor_autoload_c = 0
-        pat9125_register_dict = self.pat9125.pat9125_update()
+        # pat9125_register_dict = self.pat9125.pat9125_update()
         # self.MCU_TIME = pat9125_register_dict['MCU_TIME']
         self.do_autoload_now = False
     
     def check_autoload(self):
         # check the sensor values for an autoload event
         pat9125_register_dict = self.pat9125_update_y()
-        # delta_time = ((pat9125_register_dict['MCU_TIME'] - self.MCU_TIME) * 1000)
-        # self.MCU_TIME = pat9125_register_dict['MCU_TIME'] # cache the MCU time on last calculation
+        if pat9125_register_dict is None:
+            return
+        else:
+            # delta_time = ((pat9125_register_dict['MCU_TIME'] - self.MCU_TIME) * 1000)
+            # self.MCU_TIME = pat9125_register_dict['MCU_TIME'] # cache the MCU time on last calculation
 
 
-        # if delta_time < 50: # If update is too quack (no, its not a typ0)
-            # logging.info("Skipping this update, update too recent")
-            # return
-        # else: # Ogres are like onions
-        old_y = self.pat9125.pat9125_y
-        new_y = pat9125_register_dict['DELTA_YL']
-        dy = new_y - old_y # delta Y movement
-        self.pat9125_y = pat9125_register_dict['DELTA_YL']
-        # delta_time = pat9125_register_dict['DELTA_TIME']
-        if ( dy != 0 ): # onions have layers
-            if (dy > 0): # delta-y value is positive (inserting)
-                self.fsensor_autoload_sum += dy
-                self.fsensor_autoload_c += 3 # increment change counter by 3
-            elif (self.fsensor_autoload_c > 1) :
-                self.fsensor_autoload_c -= 2 # decrement change counter by 2 
-            self.pat9125.pat9125_y = new_y
-        
-        self.gcode.respond_info("Autoload count: %s Autoload sum: %s, delta y: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, self.pat9125.pat9125_y))
+            # if delta_time < 50: # If update is too quack (no, its not a typ0)
+                # logging.info("Skipping this update, update too recent")
+                # return
+            # else: # Ogres are like onions
+            old_y = self.pat9125.pat9125_y
+            new_y = pat9125_register_dict['DELTA_YL']
+            dy = new_y - old_y # delta Y movement
+            self.pat9125_y = pat9125_register_dict['DELTA_YL']
+            # delta_time = pat9125_register_dict['DELTA_TIME']
+            if ( dy != 0 ): # onions have layers
+                if (dy > 0): # delta-y value is positive (inserting)
+                    self.fsensor_autoload_sum += dy
+                    self.fsensor_autoload_c += 3 # increment change counter by 3
+                elif (self.fsensor_autoload_c > 1) :
+                    self.fsensor_autoload_c -= 2 # decrement change counter by 2 
+                self.pat9125.pat9125_y = new_y
+            
+            self.gcode.respond_info("Autoload count: %s Autoload sum: %s, delta y: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, self.pat9125.pat9125_y))
 
         if (self.fsensor_autoload_c >= 12) and (self.fsensor_autoload_sum > 20):
             self.do_autoload_now = True
