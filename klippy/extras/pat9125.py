@@ -23,6 +23,7 @@ PAT9125_REGS = {
 }
 
 PAT9125_INIT1 = [
+    (PAT9125_REGS['WP'], [0x5a]),
     (PAT9125_REGS['RES_X'], [PAT9125_XRES]),
     (PAT9125_REGS['RES_Y'], [PAT9125_YRES]),
     (PAT9125_REGS['ORIENTATION'], [0x04]),
@@ -124,11 +125,7 @@ class PAT9125:
         minclock = mcu.print_time_to_clock(print_time + .001)
         self.write_register('CONFIG', 0x97, minclock=minclock)
         minclock = mcu.print_time_to_clock(print_time + .002)
-        self.write_register('WP', 0x5a, minclock=minclock)
-        wp = self.read_register('WP', 1)[0]
-        if wp != 0x5a:
-            logging.info("Error disabling write protection")
-            return
+        self.write_register('CONFIG', 0x17, minclock=minclock)
 
         if not (self._send_init_sequence(PAT9125_INIT1)):
             return
@@ -140,31 +137,49 @@ class PAT9125:
             return
 
         self.write_register('BANK_SELECTION', 0x00)
-        self.write_register('WP', 0x00)
+        if not self.write_verify_reg('WP', 0x00):
+            logging.info("PAT9125: Unable to re-enable write protect")
+            return
 
         if not self.check_product_id():
             return
 
         self.write_register('RES_X', PAT9125_XRES)
         self.write_register('RES_Y', PAT9125_YRES)
-
-
-
         self.initialized = True
         logging.info("PAT9125 Initialization Success")
-    def _send_init_sequence(self, sequence):
+    def _send_init_sequence(self, sequence, retry_cnt=5):
         for addr, data in sequence:
-            self.write_register(addr, data)
-            r_data = self.read_register(addr, len(data))
-            for w_byte, r_byte in zip(data, r_data):
-                if w_byte & 0xFF != r_byte & 0xFF:
-                    logging.info(
-                        "PAT9125 Read/Write mismatch, register (%#x)"
-                        % (addr))
-                    log_byte_array("Written bytes", data)
-                    log_byte_array("Read bytes   ", r_data)
-                    return False
+            retries = max(1, retry_cnt)
+            verified = False
+            while retries and not verified:
+                retries -= 1
+                verified = True
+                self.write_register(addr, data)
+                r_data = self.read_register(addr, len(data))
+                for w_byte, r_byte in zip(data, r_data):
+                    if w_byte & 0xFF != r_byte & 0xFF:
+                        verified = False
+                        if not retries:
+                            logging.info(
+                                "PAT9125 Read/Write mismatch, register (%#x)"
+                                % (addr))
+                            log_byte_array("Written bytes", data)
+                            log_byte_array("Read bytes   ", r_data)
+                            return False
+                        else:
+                            break
         return True
+    def write_verify_reg(self, reg, data, retry_cnt=5):
+        # write/verify data in a single register
+        verified = False
+        retries = max(1, retry_cnt)
+        while retries and not verified:
+            retries -= 1
+            self.write_register(reg, data)
+            r_data = self.read_register(reg, 1)
+            verified = (data & 0xFF == r_data[0])
+        return verified
     def check_product_id(self):
         pid = self.read_register('PID1', 2)
         if ((pid[1] << 8) | pid[0]) != PAT9125_PRODUCT_ID:
