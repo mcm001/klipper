@@ -207,25 +207,7 @@ class PAT9125:
             for key in results:
                 results[key] = data[PAT9125_REGS[key]]
             # results['MCU_TIME'] = 0
-            return results
-
-    def pat9125_update_y(self):
-        pat_dict = self.pat9125_update()
-        if self.initialized is not True:
-            logging.error("PAT not inilized, can't update y")
-            return 
-        else:
-            ucMotion = pat_dict['MOTION']
-            if (ucMotion & 0x80) != 0: 
-                delta_yl = pat_dict['DELTA_YL']
-                delta_xyh = pat_dict['DELTA_XYH']
-                DY = delta_yl | ((delta_xyh << 8) & 0xf00)
-                if ( DY & 0x800 ):
-                    DY -= 4096
-                self.pat9125_y -= DY
-                return pat_dict
-
-            
+            return results           
     def cmd_SENSOR_READ_ID(self, params):
         product_id = self.read_register('PID1', 2)
         self.gcode.respond_info(
@@ -301,6 +283,23 @@ class WatchDog:
         return eventtime + self.refresh_time
 
     # XXX Filament autoload
+
+    def pat9125_update_y(self):
+        pat_dict = self.pat9125.pat9125_update()
+        if self.pat9125.initialized is not True:
+            logging.error("PAT not inilized, can't update y")
+            return 
+        else:
+            ucMotion = pat_dict['MOTION']
+            if (ucMotion & 0x80) != 0: 
+                delta_yl = pat_dict['DELTA_YL']
+                delta_xyh = pat_dict['DELTA_XYH']
+                DY = delta_yl | ((delta_xyh << 8) & 0xf00)
+                if ( DY & 0x800 ):
+                    DY -= 4096
+                self.pat9125_y -= DY
+                return pat_dict
+
     def filament_autoload_init(self):
         self.fsensor_autoload_y = self.pat9125.pat9125_y
         self.fsensor_autoload_sum = 0
@@ -311,7 +310,7 @@ class WatchDog:
     
     def check_autoload(self):
         # check the sensor values for an autoload event
-        pat9125_register_dict = self.pat9125.pat9125_update_y()
+        pat9125_register_dict = self.pat9125_update_y()
         # delta_time = ((pat9125_register_dict['MCU_TIME'] - self.MCU_TIME) * 1000)
         # self.MCU_TIME = pat9125_register_dict['MCU_TIME'] # cache the MCU time on last calculation
 
@@ -339,7 +338,7 @@ class WatchDog:
             self.do_autoload_now = True
         
 
-    def DO_FILAMENT_AUTOLOAD(self,params): # dew the autoload
+    def DO_FILAMENT_AUTOLOAD(self): # dew the autoload
         # while not printing and every so often
         if (self.autoload_enabled is not True):
             self.gcode.respond_info("Autoload is disabled, cannot autoload")
@@ -359,9 +358,10 @@ class WatchDog:
     cmd_AUTOLOAD_FILAMENT_help = \
         "Enable Autoload when PAT9125 detects filament"
     def cmd_AUTOLOAD_FILAMENT(self, params):
+        self.gcode.respond_info("Init autoload")
         self.filament_autoload_init()
         while self.do_autoload_now is False:
-            self.DO_FILAMENT_AUTOLOAD
+            self.DO_FILAMENT_AUTOLOAD()
             if self.do_autoload_now is True:
                 self.do_autoload_now = False
                 # Do gcode script for autoload
@@ -369,8 +369,8 @@ class WatchDog:
                 self.gcode.respond_info("Autoload detected!")
                 return True
             else:
-                self.check_autoload
-        self.reactor.pause(self.reactor.monotonic() + .1)
+                self.check_autoload()
+        self.reactor.pause(self.reactor.monotonic() + .05)
 
         
 
