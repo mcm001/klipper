@@ -60,6 +60,7 @@ class PAT9125:
             config, default_addr=CHIP_ADDR, default_speed=400000)
         self.gcode = self.printer.lookup_object('gcode')
         self.watchdog = WatchDog(config, self)
+        # self.pat9125_fsensor = pat9125_fsensor(config, self)
         self.initialized = False
         
         self.gcode.register_command(
@@ -68,6 +69,9 @@ class PAT9125:
             'PAT_TEST_INIT', self.cmd_PAT_TEST_INIT)
         self.gcode.register_command(
             'PAT_READ_REG', self.cmd_PAT_READ_REG)
+        
+        self.pat9125_x = 0
+        self.pat9125_y = 0
     def printer_state(self, state):
         if state == 'ready':
             self.watchdog.watchdog_init()
@@ -144,9 +148,6 @@ class PAT9125:
         self.write_register('RES_X', PAT9125_XRES)
         self.write_register('RES_Y', PAT9125_YRES)
 
-        self.pat9125_x = 0
-        self.pat9125_y = 0
-
 
 
         self.initialized = True
@@ -169,7 +170,7 @@ class PAT9125:
         if ((pid[1] << 8) | pid[0]) != PAT9125_PRODUCT_ID:
             logging.info(
                 "Product ID Mismatch Expected: %d, Recd: %d"
-                % PAT9125_PRODUCT_ID, ((pid[1] << 8) | pid[0]))
+                % (PAT9125_PRODUCT_ID, ((pid[1] << 8) | pid[0])))
             return False
         return True
     def pat9125_update(self):
@@ -179,7 +180,7 @@ class PAT9125:
         if ((data[1] << 8) | data[0]) != PAT9125_PRODUCT_ID:
             logging.info(
                 "Product ID Mismatch Expected: %d, Recd: %d"
-                % PAT9125_PRODUCT_ID, ((data[1] << 8) | data[0]))
+                % (PAT9125_PRODUCT_ID, ((data[1] << 8) | data[0])))
             self.initialized = False
             return None
         else:
@@ -229,26 +230,68 @@ class PAT9125:
         self.gcode.respond_info(
             "Value at register [%#X]: %d" % (reg, data))
 
-class pat9125_fsensor:
-    def __init__(self, config):
+# class pat9125_fsensor:
+#     def __init__(self, config, pat9125):
+#         self.printer = config.get_printer()
+#         self.gcode = self.printer.lookup_object('gcode')
+#         # self.pat9125 = self.printer.lookup_object('pat9125')
+
+
+
+class WatchDog:
+    def __init__(self, config, pat9125):
         self.printer = config.get_printer()
+        self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object('gcode')
-        self.pat9125 = self.printer.lookup_object('pat9125')
         self.prusa_gcodes = self.printer.lookup_object('prusa_gcodes')
+        self.pat9125 = pat9125 # TODO check this
+        # self.pat9125_fsensor = pat9125_fsensor(config, self)
+        self.runout_callback = None
+        self.is_autoload = False
+        self.refresh_time = .100
+        self.toolhead = self.kinematics = None
+        self.last_position = [0., 0., 0., 0.]
+        self.watchdog_timer = self.reactor.register_timer(
+            self._watchdog_update_event)
 
         self.autoload_enabled = config.getboolean('filament_autoload', default=False)
         self.runout_detect_enabled = config.getboolean('filament_runout', default=False)
         self.inverted = config.get('inverted', default=False)
-
+        self.pat9125 = pat9125
         self.do_autoload_now = False
+        
+        self.gcode.register_command(
+            "AUTOLOAD_FILAMENT", self.cmd_AUTOLOAD_FILAMENT,
+            desc=self.cmd_AUTOLOAD_FILAMENT_help)
+    def watchdog_init(self):
+        self.toolhead = self.printer.lookup_object('toolhead')
+        self.kinematics = self.toolhead.get_kinematics()
+    def set_runout_callback(self, callback):
+        self.runout_callback = callback
+    def enable_timer(self):
+        self.last_position[:] = self.kinematics.calc_position()
+        self.reactor.update_timer(self.watchdog_timer, self.reactor.NOW)
+    def disable_timer(self):
+        self.reactor.update_timer(self.watchdog_timer, self.reactor.NEVER)
+    def _watchdog_update_event(self, eventtime):
+        # gets current kinematic position, calculates delta
+        current_pos = self.kinematics.calc_position()
+        self.delta_e = current_pos[3] - self.last_position[3]
+        # XXX - put sampling code here!
+        # When it is determined that filament has run out, execute the
+        # callback, ie:
+        # If self.runout_callback is not None:
+        #   self.runout_callback()
+        self.last_position[:] = current_pos
+        return eventtime + self.refresh_time
 
-    
+    # XXX Filament autoload
     def filament_autoload_init(self):
         self.fsensor_autoload_y = self.pat9125.pat9125_y
         self.fsensor_autoload_sum = 0
         self.fsensor_autoload_c = 0
         pat9125_register_dict = self.pat9125.pat9125_update()
-        self.MCU_TIME = pat9125_register_dict['MCU_TIME']
+        # self.MCU_TIME = pat9125_register_dict['MCU_TIME']
         self.do_autoload_now = False
     
     def check_autoload(self):
@@ -284,6 +327,7 @@ class pat9125_fsensor:
     def DO_FILAMENT_AUTOLOAD(self,params): # dew the autoload
         # while not printing and every so often
         if (self.autoload_enabled is not True):
+            self.gcode.respond_info("Autoload is disabled, cannot autoload")
             return
         if self.do_autoload_now is True:
             self.do_autoload_now = False
@@ -297,48 +341,20 @@ class pat9125_fsensor:
 
 
 
-class WatchDog:
-    def __init__(self, config, pat9125):
-        self.printer = config.get_printer()
-        self.reactor = self.printer.get_reactor()
-        self.gcode = self.printer.lookup_object('gcode')
-        self.pat9125 = pat9125
-        self.runout_callback = None
-        self.is_autoload = False
-        self.refresh_time = .100
-        self.toolhead = self.kinematics = None
-        self.last_position = [0., 0., 0., 0.]
-        self.watchdog_timer = self.reactor.register_timer(
-            self._watchdog_update_event)
-        self.gcode.register_command(
-            "AUTOLOAD_FILAMENT", self.cmd_AUTOLOAD_FILAMENT,
-            desc=self.cmd_AUTOLOAD_FILAMENT_help)
-    def watchdog_init(self):
-        self.toolhead = self.printer.lookup_object('toolhead')
-        self.kinematics = self.toolhead.get_kinematics()
-    def set_runout_callback(self, callback):
-        self.runout_callback = callback
-    def enable_timer(self):
-        self.last_position[:] = self.kinematics.calc_position()
-        self.reactor.update_timer(self.watchdog_timer, self.reactor.NOW)
-    def disable_timer(self):
-        self.reactor.update_timer(self.watchdog_timer, self.reactor.NEVER)
-    def _watchdog_update_event(self, eventtime):
-        # gets current kinematic position, calculates delta
-        current_pos = self.kinematics.calc_position()
-        self.delta_e = current_pos[3] - self.last_position[3]
-        # XXX - put sampling code here!
-        # When it is determined that filament has run out, execute the
-        # callback, ie:
-        # If self.runout_callback is not None:
-        #   self.runout_callback()
-        self.last_position[:] = current_pos
-        return eventtime + self.refresh_time
     cmd_AUTOLOAD_FILAMENT_help = \
         "Enable Autoload when PAT9125 detects filament"
     def cmd_AUTOLOAD_FILAMENT(self, params):
-        pat9125_fsensor.filament_autoload_init
-        pat9125_fsensor.DO_FILAMENT_AUTOLOAD
+        self.filament_autoload_init()
+        while self.do_autoload_now is False:
+            self.DO_FILAMENT_AUTOLOAD
+            if self.do_autoload_now is True:
+                self.do_autoload_now = False
+                # Do gcode script for autoload
+                # self.prusa_gcodes.cmd_LOAD_FILAMENT
+                self.gcode.respond_info("Autoload detected!")
+                return True
+            else:
+                self.check_autoload
         self.reactor.pause(self.reactor.monotonic() + .1)
 
         
