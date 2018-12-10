@@ -108,9 +108,10 @@ class MCU_I2C:
             return
         self.i2c_write_cmd.send([self.oid, data],
                                 minclock=minclock, reqclock=reqclock)
-    def i2c_read(self, write, read_len):
+    def i2c_read(self, write, read_len, poll_time=.05):
         return self.i2c_read_cmd.send_with_response(
-            [self.oid, write, read_len], 'i2c_read_response', self.oid)
+            [self.oid, write, read_len], 'i2c_read_response', self.oid,
+            poll_time)
     def i2c_modify_bits(self, reg, clear_bits, set_bits,
                         minclock=0, reqclock=0):
         clearset = clear_bits + set_bits
