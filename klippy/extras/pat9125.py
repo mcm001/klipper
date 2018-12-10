@@ -89,7 +89,7 @@ class PAT9125:
             regs = list(reg)
         else:
             regs = [reg]
-        params = self.i2c.i2c_read(regs, read_len)
+        params = self.i2c.i2c_read(regs, read_len, poll_time=.005)
         return bytearray(params['response'])
     def write_register(self, reg, data, minclock=0, reqclock=0):
         # Write data to a register. Reg may be a named
