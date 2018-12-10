@@ -119,13 +119,16 @@ class PAT9125:
             if not self.check_product_id():
                 return
 
+
         self.write_register('BANK_SELECTION', 0x00)
 
         print_time = mcu.estimated_print_time(self.reactor.monotonic())
         minclock = mcu.print_time_to_clock(print_time + .001)
         self.write_register('CONFIG', 0x97, minclock=minclock)
         minclock = mcu.print_time_to_clock(print_time + .002)
-        self.write_register('CONFIG', 0x17, minclock=minclock)
+        self.write_register('WP', 0x5a, minclock=minclock)
+
+
 
         if not (self._send_init_sequence(PAT9125_INIT1)):
             return
@@ -148,6 +151,27 @@ class PAT9125:
         self.write_register('RES_Y', PAT9125_YRES)
         self.initialized = True
         logging.info("PAT9125 Initialization Success")
+
+    # def _pat9125_init(self):
+    #     mcu = self.i2c.get_mcu()
+    #     self.initialized = False
+
+    #     # Read and verify product ID
+    #     if not self.check_product_id():
+    #         logging.info("Rechecking ID...")
+    #         if not self.check_product_id():
+    #             return
+
+    #     self.write_register('BANK_SELECTION', 0x00)
+
+    #     print_time = mcu.estimated_print_time(self.reactor.monotonic())
+    #     minclock = mcu.print_time_to_clock(print_time + .001)
+    #     self.write_register('CONFIG', 0x97, minclock=minclock)
+    #     minclock = mcu.print_time_to_clock(print_time + .002)
+    #     self.write_register('WP', 0x5a, minclock=minclock)
+
+
+
     def _send_init_sequence(self, sequence, retry_cnt=5):
         for addr, data in sequence:
             retries = max(1, retry_cnt)
@@ -191,7 +215,8 @@ class PAT9125:
     def pat9125_update(self):
         # XXX - set option to retreive response time in read_register
         # read data from 0x00 to 0x17
-        data = self.read_register('PID1', 24)
+        data = self.read_register('PID1', 3)
+        data += self.read_register('DELTA_XL', 21)
         if ((data[1] << 8) | data[0]) != PAT9125_PRODUCT_ID:
             logging.info(
                 "Product ID Mismatch Expected: %d, Recd: %d"
@@ -207,7 +232,7 @@ class PAT9125:
             for key in results:
                 results[key] = data[PAT9125_REGS[key]]
             # results['MCU_TIME'] = 0
-            return results           
+            return results 
     def cmd_SENSOR_READ_ID(self, params):
         product_id = self.read_register('PID1', 2)
         self.gcode.respond_info(
@@ -221,7 +246,7 @@ class PAT9125:
             msg = "PAT9125 Initialization failure, check klippy.log"
         self.gcode.respond_info(msg)
     def cmd_PAT_READ_REG(self, params):
-        reg = self.gcode.get('REG', params)
+        reg = self.gcode.get_str('REG', params)
         reg = int(reg, 16)
         data = self.read_register(reg, 1)[0]
         self.gcode.respond_info(
@@ -285,6 +310,7 @@ class WatchDog:
     # XXX Filament autoload
 
     def pat9125_update_y(self):
+        logging.info("pat9125_update_y called")
         pat_dict = self.pat9125.pat9125_update()
         # if self.pat9125.initialized is not True:
         if pat_dict is None:
@@ -303,6 +329,7 @@ class WatchDog:
 
     def filament_autoload_init(self):
         self.fsensor_autoload_y = self.pat9125.pat9125_y
+        self.pat9125._pat9125_init()
         self.fsensor_autoload_sum = 0
         self.fsensor_autoload_c = 0
         # pat9125_register_dict = self.pat9125.pat9125_update()
@@ -313,6 +340,7 @@ class WatchDog:
         # check the sensor values for an autoload event
         pat9125_register_dict = self.pat9125_update_y()
         if pat9125_register_dict is None:
+            logging.info("register dict is empty")
             return
         else:
             # delta_time = ((pat9125_register_dict['MCU_TIME'] - self.MCU_TIME) * 1000)
@@ -322,21 +350,24 @@ class WatchDog:
             # if delta_time < 50: # If update is too quack (no, its not a typ0)
                 # logging.info("Skipping this update, update too recent")
                 # return
+            logging.info("going down the rabbit hole")
             # else: # Ogres are like onions
-            old_y = self.pat9125.pat9125_y
-            new_y = pat9125_register_dict['DELTA_YL']
-            dy = new_y - old_y # delta Y movement
+            # old_y = self.pat9125.pat9125_y
+            dy = pat9125_register_dict['DELTA_YL']
+            # dy = new_y - old_y # delta Y movement
             self.pat9125_y = pat9125_register_dict['DELTA_YL']
             # delta_time = pat9125_register_dict['DELTA_TIME']
             if ( dy != 0 ): # onions have layers
                 if (dy > 0): # delta-y value is positive (inserting)
+                    logging.info("positive movementd etected")
                     self.fsensor_autoload_sum += dy
                     self.fsensor_autoload_c += 3 # increment change counter by 3
                 elif (self.fsensor_autoload_c > 1) :
                     self.fsensor_autoload_c -= 2 # decrement change counter by 2 
-                self.pat9125.pat9125_y = new_y
+            self.pat9125.pat9125_y += dy
             
-            self.gcode.respond_info("Autoload count: %s Autoload sum: %s, delta y: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, self.pat9125.pat9125_y))
+            self.gcode.respond_info("Autoload count: %s Autoload sum: %s, delta y: %s Overall Position: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, dy, self.pat9125.pat9125_y))
+            logging.info("Autoload count: %s Autoload sum: %s, delta y: %s Overall Position: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, dy, self.pat9125.pat9125_y))
 
         if (self.fsensor_autoload_c >= 12) and (self.fsensor_autoload_sum > 20):
             self.do_autoload_now = True
@@ -354,7 +385,8 @@ class WatchDog:
             self.gcode.respond_info("Autoload detected!")
             return True
         else:
-            self.check_autoload
+            self.check_autoload()
+            return False
 
 
 
@@ -371,10 +403,10 @@ class WatchDog:
                 # Do gcode script for autoload
                 # self.prusa_gcodes.cmd_LOAD_FILAMENT
                 self.gcode.respond_info("Autoload detected!")
-                return True
-            else:
-                self.check_autoload()
-        self.reactor.pause(self.reactor.monotonic() + .05)
+                # return True
+            # else:
+                # self.check_autoload() # REDUNDANT CODE
+        self.reactor.pause(self.reactor.monotonic() + .2)
 
         
 
