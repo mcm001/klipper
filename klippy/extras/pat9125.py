@@ -215,24 +215,24 @@ class PAT9125:
     def pat9125_update(self):
         # XXX - set option to retreive response time in read_register
         # read data from 0x00 to 0x17
-        data = self.read_register('PID1', 3)
-        data += self.read_register('DELTA_XL', 21)
-        if ((data[1] << 8) | data[0]) != PAT9125_PRODUCT_ID:
-            logging.info(
-                "Product ID Mismatch Expected: %d, Recd: %d"
-                % (PAT9125_PRODUCT_ID, ((data[1] << 8) | data[0])))
-            self.initialized = False
-            return None
-        else:
+        motion = self.read_register(PAT9125_REGS['MOTION'],1)[0]
+        
+        if motion & 0x80:    
+            data = self.read_register(PAT9125_REGS['DELTA_XL'],21)
+            self.gcode.respond_info("X: %d, Y: %d, XYH: %d" % (data[0], data[1], data[15]))
             self.initialized = True
             # XXX - extract values
             results = {
                 'MOTION': 0, 'DELTA_XL': 0, 'DELTA_YL': 0, 'DELTA_XYH': 0,
                 'FRAME': 0, 'SHUTTER': 0}
             for key in results:
-                results[key] = data[PAT9125_REGS[key]]
+                results[key] = data[PAT9125_REGS[key] - 3]
             # results['MCU_TIME'] = 0
             return results 
+        else:
+            return None
+
+
     def cmd_SENSOR_READ_ID(self, params):
         product_id = self.read_register('PID1', 2)
         self.gcode.respond_info(
@@ -285,6 +285,9 @@ class WatchDog:
         self.gcode.register_command(
             "AUTOLOAD_FILAMENT", self.cmd_AUTOLOAD_FILAMENT,
             desc=self.cmd_AUTOLOAD_FILAMENT_help)
+
+        self.gcode.register_command("READ_DELTA_Y",self.cmd_READ_DELTA_Y)
+
     def watchdog_init(self):
         self.toolhead = self.printer.lookup_object('toolhead')
         self.kinematics = self.toolhead.get_kinematics()
@@ -314,18 +317,18 @@ class WatchDog:
         pat_dict = self.pat9125.pat9125_update()
         # if self.pat9125.initialized is not True:
         if pat_dict is None:
-            logging.error("PAT not inilized, can't update y")
+            logging.error("No motion detected, can't update")
             return 
         else:
-            ucMotion = pat_dict['MOTION']
-            if (ucMotion & 0x80) != 0: 
-                delta_yl = pat_dict['DELTA_YL']
-                delta_xyh = pat_dict['DELTA_XYH']
-                DY = delta_yl | ((delta_xyh << 8) & 0xf00)
-                if ( DY & 0x800 ):
-                    DY -= 4096
-                self.pat9125.pat9125_y -= DY
-                return pat_dict
+            # ucMotion = pat_dict['MOTION']
+            # if (ucMotion & 0x80) != 0: 
+            delta_yl = pat_dict['DELTA_YL']
+            delta_xyh = pat_dict['DELTA_XYH']
+            DY = delta_yl | ((delta_xyh << 8) & 0xf00)
+            if ( DY & 0x800 ):
+                DY -= 4096
+            self.pat9125.pat9125_y -= DY
+            return pat_dict
 
     def filament_autoload_init(self):
         self.fsensor_autoload_y = self.pat9125.pat9125_y
@@ -350,24 +353,24 @@ class WatchDog:
             # if delta_time < 50: # If update is too quack (no, its not a typ0)
                 # logging.info("Skipping this update, update too recent")
                 # return
-            logging.info("going down the rabbit hole")
+            logging.info("Checking the delta for autoload condition...")
             # else: # Ogres are like onions
             # old_y = self.pat9125.pat9125_y
             dy = pat9125_register_dict['DELTA_YL']
             # dy = new_y - old_y # delta Y movement
-            self.pat9125_y = pat9125_register_dict['DELTA_YL']
+            # self.pat9125_y = pat9125_register_dict['DELTA_YL']
             # delta_time = pat9125_register_dict['DELTA_TIME']
             if ( dy != 0 ): # onions have layers
                 if (dy > 0): # delta-y value is positive (inserting)
-                    logging.info("positive movementd etected")
+                    logging.info("positive movement detected")
                     self.fsensor_autoload_sum += dy
                     self.fsensor_autoload_c += 3 # increment change counter by 3
                 elif (self.fsensor_autoload_c > 1) :
                     self.fsensor_autoload_c -= 2 # decrement change counter by 2 
             self.pat9125.pat9125_y += dy
             
-            self.gcode.respond_info("Autoload count: %s Autoload sum: %s, delta y: %s Overall Position: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, dy, self.pat9125.pat9125_y))
-            logging.info("Autoload count: %s Autoload sum: %s, delta y: %s Overall Position: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, dy, self.pat9125.pat9125_y))
+            logging.info("Autoload count: %s Autoload sum: %s, delta y: %s Overall Position: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, dy, self.pat9125.pat9125_y ))
+            # logging.info("Autoload count: %s Autoload sum: %s, delta y: %s Overall Position: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, dy, self.pat9125.pat9125_y))
 
         if (self.fsensor_autoload_c >= 12) and (self.fsensor_autoload_sum > 20):
             self.do_autoload_now = True
@@ -396,19 +399,34 @@ class WatchDog:
     def cmd_AUTOLOAD_FILAMENT(self, params):
         self.gcode.respond_info("Init autoload")
         self.filament_autoload_init()
-        while self.do_autoload_now is False:
-            self.DO_FILAMENT_AUTOLOAD()
-            if self.do_autoload_now is True:
-                self.do_autoload_now = False
-                # Do gcode script for autoload
-                # self.prusa_gcodes.cmd_LOAD_FILAMENT
-                self.gcode.respond_info("Autoload detected!")
-                # return True
-            # else:
-                # self.check_autoload() # REDUNDANT CODE
-        self.reactor.pause(self.reactor.monotonic() + .2)
+        curtime = self.reactor.monotonic()
+        endtime = curtime + 20
+        while curtime < endtime:
+            while self.do_autoload_now is False:
+                self.DO_FILAMENT_AUTOLOAD()
+                if self.do_autoload_now is True:
+                    self.do_autoload_now = False
+                    # Do gcode script for autoload
+                    # self.prusa_gcodes.cmd_LOAD_FILAMENT
+                    self.gcode.respond_info("Autoload detected!")
+                    return
+            # self.reactor.pause(self.reactor.monotonic() + .005)
+        self.gcode.respond_info("timed out")
 
-        
+    def cmd_READ_DELTA_Y(self, params):
+        self.pat9125.cmd_PAT_TEST_INIT(params)
+        curtime = self.reactor.monotonic()
+        endtime = curtime + 10
+        while curtime < endtime:
+            motion = self.pat9125.read_register(PAT9125_REGS['MOTION'],1)[0]
+            if motion & 0x80:
+                data = self.pat9125.read_register(PAT9125_REGS['DELTA_XL'],21)
+                if data[1] != 0:
+                    self.gcode.respond_info("X: %d, Y: %d, XYH: %d" % (data[0], data[1], data[15]))
+            curtime = self.reactor.pause(curtime + .05)
+        # if not y:
+        #     self.gcode.respond_info("Test Failed")
+
 
 def load_config(config):
     return PAT9125(config)
