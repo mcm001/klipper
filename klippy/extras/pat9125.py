@@ -313,7 +313,7 @@ class WatchDog:
     # XXX Filament autoload
 
     def pat9125_update_y(self):
-        logging.info("pat9125_update_y called")
+        # logging.info("pat9125_update_y called")
         pat_dict = self.pat9125.pat9125_update()
         # if self.pat9125.initialized is not True:
         if pat_dict is None:
@@ -343,7 +343,7 @@ class WatchDog:
         # check the sensor values for an autoload event
         pat9125_register_dict = self.pat9125_update_y()
         if pat9125_register_dict is None:
-            logging.info("register dict is empty")
+            # logging.info("register dict is empty")
             return
         else:
             # delta_time = ((pat9125_register_dict['MCU_TIME'] - self.MCU_TIME) * 1000)
@@ -353,7 +353,7 @@ class WatchDog:
             # if delta_time < 50: # If update is too quack (no, its not a typ0)
                 # logging.info("Skipping this update, update too recent")
                 # return
-            logging.info("Checking the delta for autoload condition...")
+            # logging.info("Checking the delta for autoload condition...")
             # else: # Ogres are like onions
             # old_y = self.pat9125.pat9125_y
             dy = pat9125_register_dict['DELTA_YL']
@@ -362,7 +362,7 @@ class WatchDog:
             # delta_time = pat9125_register_dict['DELTA_TIME']
             if ( dy != 0 ): # onions have layers
                 if (dy > 0): # delta-y value is positive (inserting)
-                    logging.info("positive movement detected")
+                    # logging.info("positive movement detected")
                     self.fsensor_autoload_sum += dy
                     self.fsensor_autoload_c += 3 # increment change counter by 3
                 elif (self.fsensor_autoload_c > 1) :
@@ -404,6 +404,9 @@ class WatchDog:
         while curtime < endtime:
             while self.do_autoload_now is False:
                 self.DO_FILAMENT_AUTOLOAD()
+                now = self.reactor.monotonic()
+                logging.info("Current refresh rate: %i updates/second" % (1/(now-curtime)))
+                curtime = now
                 if self.do_autoload_now is True:
                     self.do_autoload_now = False
                     # Do gcode script for autoload
