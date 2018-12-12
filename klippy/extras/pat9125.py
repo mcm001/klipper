@@ -266,7 +266,7 @@ class WatchDog:
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object('gcode')
         self.prusa_gcodes = self.printer.lookup_object('prusa_gcodes')
-        self.pat9125 = pat9125 # TODO check this
+        self.pat9125 = pat9125
         # self.pat9125_fsensor = pat9125_fsensor(config, self)
         self.runout_callback = None
         self.is_autoload = False
@@ -282,15 +282,25 @@ class WatchDog:
         self.pat9125 = pat9125
         self.do_autoload_now = False
         
+
+        # set initial state
+        self.state = "Idle"
+        self.autoload_allowed = True
+
+
         self.gcode.register_command(
             "AUTOLOAD_FILAMENT", self.cmd_AUTOLOAD_FILAMENT,
             desc=self.cmd_AUTOLOAD_FILAMENT_help)
+        self.gcode.register_command(
+            "AUTOLOD_STATE", self.cmd_AUTOLOD_STATE)
 
         self.gcode.register_command("READ_DELTA_Y",self.cmd_READ_DELTA_Y)
 
     def watchdog_init(self):
         self.toolhead = self.printer.lookup_object('toolhead')
         self.kinematics = self.toolhead.get_kinematics()
+        self.printer.register_event_handler("idle_timeout:idle", self._idle_status_handler)
+        # TODO register ready and printing callbacks
     def set_runout_callback(self, callback):
         self.runout_callback = callback
     def enable_timer(self):
@@ -298,6 +308,18 @@ class WatchDog:
         self.reactor.update_timer(self.watchdog_timer, self.reactor.NOW)
     def disable_timer(self):
         self.reactor.update_timer(self.watchdog_timer, self.reactor.NEVER)
+
+    # Define callbacks for state change
+    def _ready_status_handler(self, print_time):
+        self.state = "Ready"
+        self.autoload_allowed = True
+    def _idle_status_handler(self, print_time):
+        self.state = "Idle"
+        self.autoload_allowed = True
+    def _printing_status_handler(self, print_time):
+        self.state = "Printing"
+        self.autoload_allowed = False
+
     def _watchdog_update_event(self, eventtime):
         # gets current kinematic position, calculates delta
         current_pos = self.kinematics.calc_position()
@@ -313,21 +335,20 @@ class WatchDog:
     # XXX Filament autoload
 
     def pat9125_update_y(self):
-        # logging.info("pat9125_update_y called")
         pat_dict = self.pat9125.pat9125_update()
-        # if self.pat9125.initialized is not True:
         if pat_dict is None:
             logging.error("No motion detected, can't update")
-            return 
+            return pat_dict
         else:
-            # ucMotion = pat_dict['MOTION']
-            # if (ucMotion & 0x80) != 0: 
             delta_yl = pat_dict['DELTA_YL']
             delta_xyh = pat_dict['DELTA_XYH']
             DY = delta_yl | ((delta_xyh << 8) & 0xf00)
             if ( DY & 0x800 ):
                 DY -= 4096
-            self.pat9125.pat9125_y -= DY
+            if self.inverted is True:
+                self.pat9125.pat9125_y += DY
+            else:
+                self.pat9125.pat9125_y -= DY
             return pat_dict
 
     def filament_autoload_init(self):
@@ -335,86 +356,57 @@ class WatchDog:
         self.pat9125._pat9125_init()
         self.fsensor_autoload_sum = 0
         self.fsensor_autoload_c = 0
-        # pat9125_register_dict = self.pat9125.pat9125_update()
-        # self.MCU_TIME = pat9125_register_dict['MCU_TIME']
         self.do_autoload_now = False
     
     def check_autoload(self):
         # check the sensor values for an autoload event
-        pat9125_register_dict = self.pat9125_update_y()
-        if pat9125_register_dict is None:
-            # logging.info("register dict is empty")
+        # This check needs to be called multiple times to trigger an autoload, so needs to be called from a loop
+        
+        if (self.autoload_enabled is not True):
+            self.gcode.respond_info("Autoload is disabled, cannot autoload")
             return
-        else:
-            # delta_time = ((pat9125_register_dict['MCU_TIME'] - self.MCU_TIME) * 1000)
-            # self.MCU_TIME = pat9125_register_dict['MCU_TIME'] # cache the MCU time on last calculation
-
-
-            # if delta_time < 50: # If update is too quack (no, its not a typ0)
-                # logging.info("Skipping this update, update too recent")
-                # return
-            # logging.info("Checking the delta for autoload condition...")
-            # else: # Ogres are like onions
-            # old_y = self.pat9125.pat9125_y
-            dy = pat9125_register_dict['DELTA_YL']
-            # dy = new_y - old_y # delta Y movement
-            # self.pat9125_y = pat9125_register_dict['DELTA_YL']
-            # delta_time = pat9125_register_dict['DELTA_TIME']
-            if ( dy != 0 ): # onions have layers
+        
+        pat_dict = self.pat9125_update_y()
+        dy = self.pat9125.pat9125_y - self.fsensor_autoload_y
+        if pat_dict is None:
+            return
+        else: 
+            # dy = pat9125_register_dict['DELTA_YL'] # Depreciated, replaced with self.pat9125.pat9125_y
+            if ( dy != 0 ): # if movement (double sanity check after ucmotion)
                 if (dy > 0): # delta-y value is positive (inserting)
-                    # logging.info("positive movement detected")
                     self.fsensor_autoload_sum += dy
                     self.fsensor_autoload_c += 3 # increment change counter by 3
                 elif (self.fsensor_autoload_c > 1) :
                     self.fsensor_autoload_c -= 2 # decrement change counter by 2 
-            self.pat9125.pat9125_y += dy
-            
-            logging.info("Autoload count: %s Autoload sum: %s, delta y: %s Overall Position: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, dy, self.pat9125.pat9125_y ))
-            # logging.info("Autoload count: %s Autoload sum: %s, delta y: %s Overall Position: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, dy, self.pat9125.pat9125_y))
-
+                self.fsensor_autoload_y = self.pat9125.pat9125_
+                logging.info("Autoload count: %s Autoload sum: %s, delta y: %s Overall Position: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, dy, self.pat9125.pat9125_y ))
         if (self.fsensor_autoload_c >= 12) and (self.fsensor_autoload_sum > 20):
-            self.do_autoload_now = True
-        
-
-    def DO_FILAMENT_AUTOLOAD(self): # dew the autoload
-        # while not printing and every so often
-        if (self.autoload_enabled is not True):
-            self.gcode.respond_info("Autoload is disabled, cannot autoload")
-            return
-        if self.do_autoload_now is True:
-            self.do_autoload_now = False
-            # Do gcode script for autoload
-            # self.prusa_gcodes.cmd_LOAD_FILAMENT
-            self.gcode.respond_info("Autoload detected!")
             return True
         else:
-            self.check_autoload()
             return False
-
-
-
+        
 
     cmd_AUTOLOAD_FILAMENT_help = \
         "Enable Autoload when PAT9125 detects filament"
-    def cmd_AUTOLOAD_FILAMENT(self, params):
-        self.gcode.respond_info("Init autoload")
+    def cmd_AUTOLOAD_FILAMENT(self, params): # FIXME to work with callbacks, how about a forever running loop that starts running at init and checks the state set by the callback, then based on that runs the check loop? Either way this cmd will be depreciated soon I hope, can be replaced with a check autoload state command
+        self.gcode.respond_info("Autoload init")
         self.filament_autoload_init()
+        timeout = 20
         curtime = self.reactor.monotonic()
-        endtime = curtime + 20
+        endtime = curtime + timeout # set timeout to 20 seconds 
         while curtime < endtime:
             while self.do_autoload_now is False:
-                self.DO_FILAMENT_AUTOLOAD()
-                now = self.reactor.monotonic()
-                logging.info("Current refresh rate: %i updates/second" % (1/(now-curtime)))
-                curtime = now
-                if self.do_autoload_now is True:
-                    self.do_autoload_now = False
-                    # Do gcode script for autoload
+                if self.check_autoload() is True:
+                    # TODO Do gcode script for autoload
                     # self.prusa_gcodes.cmd_LOAD_FILAMENT
                     self.gcode.respond_info("Autoload detected!")
                     return
-            # self.reactor.pause(self.reactor.monotonic() + .005)
-        self.gcode.respond_info("timed out")
+            # self.reactor.pause(self.reactor.monotonic() + .005) # TODO do we need to delay?
+        self.gcode.respond_info("Autoload timed out after %i seconds" % timeout)
+
+    # def cmd_AUTOLOD_STATE_help = "Querry the current autoload state. Returns current printer state and autoload allowed status."
+    def cmd_AUTOLOD_STATE(self, params):
+        self.gcode.respond_info("Current self state: %s Autoload allowed? %s" % (self.state, self.autoload_allowed))
 
     def cmd_READ_DELTA_Y(self, params):
         self.pat9125.cmd_PAT_TEST_INIT(params)
