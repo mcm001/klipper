@@ -74,7 +74,7 @@ class PAT9125:
         self.pat9125_x = 0
         self.pat9125_y = 0
 
-        if 
+        # if 
 
     def printer_state(self, state):
         if ( state == 'Ready' ) or ( state == 'Idle' ):
@@ -395,7 +395,7 @@ class WatchDog:
         else:
             return False
         
-    def autoload_ISR(self, params):
+    def autoload_ISR(self):
         while True: # HACK - TODO is this the best way to do this?
             # TODO verify that callbacks have been registered by this point
             while self.autoload_allowed is True: #run while true (I.e. printer is not currently printing) - TODO verify this logic
