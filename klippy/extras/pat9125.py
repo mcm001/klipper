@@ -77,7 +77,7 @@ class PAT9125:
         # if 
 
     def printer_state(self, state):
-        if ( state == 'Ready' ) or ( state == 'Idle' ):
+        if state == 'ready':
             self.watchdog.watchdog_init()
             # XXX - after testing check init gcode, this
             # can be uncommented to automatically
