@@ -299,7 +299,7 @@ class WatchDog:
 
         if self.autoload_enabled is True:
             self.filament_autoload_init()
-            self.autoload_ISR()
+            self.check_autoload_loop()
 
     def watchdog_init(self):
         self.toolhead = self.printer.lookup_object('toolhead')
@@ -395,7 +395,8 @@ class WatchDog:
         else:
             return False
         
-    def autoload_ISR(self):
+    def check_autoload_loop(self):
+        logging.info("Check autoload loop init")
         while True: # HACK - TODO is this the best way to do this?
             # TODO verify that callbacks have been registered by this point
             while self.autoload_allowed is True: #run while true (I.e. printer is not currently printing) - TODO verify this logic
@@ -403,6 +404,7 @@ class WatchDog:
                     self.gcode.respond_info("Autoload ISR detected a filament load event! Running load script...")
                     self.prusa_gcodes.cmd_LOAD_FILAMENT() # Load filament
                     self.filament_autoload_init() # Reset counters to zero
+                self.reactor.pause(self.reactor.monotonic() + 0.02) # pause to conserve resources
             # If printer state is currently printing...
             self.reactor.pause(self.reactor.monotonic() + 1) # Delay a sensible time between rechecking state
 
