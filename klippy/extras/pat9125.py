@@ -299,8 +299,13 @@ class WatchDog:
     def watchdog_init(self):
         self.toolhead = self.printer.lookup_object('toolhead')
         self.kinematics = self.toolhead.get_kinematics()
+        
         self.printer.register_event_handler("idle_timeout:idle", self._idle_status_handler)
-        # TODO register ready and printing callbacks
+        self.printer.register_event_handler("idle_timeout:printing ", self._printing_status_handler)
+        self.printer.register_event_handler("idle_timeout:ready", self._ready_status_handler)
+        
+
+        
     def set_runout_callback(self, callback):
         self.runout_callback = callback
     def enable_timer(self):
