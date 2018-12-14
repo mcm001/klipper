@@ -292,7 +292,7 @@ class WatchDog:
             "AUTOLOAD_FILAMENT", self.cmd_AUTOLOAD_FILAMENT,
             desc=self.cmd_AUTOLOAD_FILAMENT_help)
         self.gcode.register_command(
-            "AUTOLOD_STATE", self.cmd_AUTOLOD_STATE)
+            "AUTOLOAD_STATE", self.cmd_AUTOLOD_STATE)
 
         self.gcode.register_command("READ_DELTA_Y",self.cmd_READ_DELTA_Y)
 
@@ -304,6 +304,10 @@ class WatchDog:
         self.printer.register_event_handler("idle_timeout:printing ", self._printing_status_handler)
         self.printer.register_event_handler("idle_timeout:ready", self._ready_status_handler)
         
+        
+        if self.autoload_enabled is True:
+            self.filament_autoload_init()
+            self.loop_autoload()
 
         
     def set_runout_callback(self, callback):
@@ -383,13 +387,24 @@ class WatchDog:
                     self.fsensor_autoload_c += 3 # increment change counter by 3
                 elif (self.fsensor_autoload_c > 1) :
                     self.fsensor_autoload_c -= 2 # decrement change counter by 2 
-                self.fsensor_autoload_y = self.pat9125.pat9125_
+                self.fsensor_autoload_y = self.pat9125.pat9125_y
                 logging.info("Autoload count: %s Autoload sum: %s, delta y: %s Overall Position: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, dy, self.pat9125.pat9125_y ))
         if (self.fsensor_autoload_c >= 12) and (self.fsensor_autoload_sum > 20):
             return True
         else:
             return False
         
+    def loop_autoload(self):
+        while True: # HACK - TODO is this the best way to do this?
+            # TODO verify that callbacks have been registered by this point
+            while self.autoload_allowed is True: #run while true (I.e. printer is not currently printing) - TODO verify this logic
+                if self.check_autoload() is True: # Loop check autoload update function to detect autoload event, if it does...
+                    self.gcode.respond_info("Autoload ISR detected a filament load event! Running load script...")
+                    # self.prusa_gcodes.cmd_LOAD_FILAMENT() # Load filament
+                    self.filament_autoload_init() # Reset counters to zero
+            # If printer state is currently printing...
+            self.reactor.pause(self.reactor.monotonic() + 1) # Delay a sensible time between rechecking state
+            logging.info("Autoload not allowed you egg!")
 
     cmd_AUTOLOAD_FILAMENT_help = \
         "Enable Autoload when PAT9125 detects filament"
@@ -400,13 +415,14 @@ class WatchDog:
         curtime = self.reactor.monotonic()
         endtime = curtime + timeout # set timeout to 20 seconds 
         while curtime < endtime:
-            while self.do_autoload_now is False:
-                if self.check_autoload() is True:
-                    # TODO Do gcode script for autoload
-                    # self.prusa_gcodes.cmd_LOAD_FILAMENT
-                    self.gcode.respond_info("Autoload detected!")
-                    return
+            # while self.do_autoload_now is False:
+            if self.check_autoload() is True:
+                # TODO Do gcode script for autoload
+                # self.prusa_gcodes.cmd_LOAD_FILAMENT
+                self.gcode.respond_info("Autoload detected!")
+                return
             # self.reactor.pause(self.reactor.monotonic() + .005) # TODO do we need to delay?
+            curtime = self.reactor.monotonic()
         self.gcode.respond_info("Autoload timed out after %i seconds" % timeout)
 
     # def cmd_AUTOLOD_STATE_help = "Querry the current autoload state. Returns current printer state and autoload allowed status."
