@@ -63,7 +63,7 @@ class PAT9125:
         self.watchdog = WatchDog(config, self)
         # self.pat9125_fsensor = pat9125_fsensor(config, self)
         self.initialized = False
-        
+        self.display = None
         self.gcode.register_command(
             'SENSOR_READ_ID', self.cmd_SENSOR_READ_ID)
         self.gcode.register_command(
@@ -80,6 +80,12 @@ class PAT9125:
             # can be uncommented to automatically
             # initialize after tool is ready
             # self._pat9125_init()
+            try:
+                self.display = self.printer.lookup_object('display')
+            except:
+                self.display = None
+                self.gcode.respond_info("Display not added to config")
+            
     def read_register(self, reg, read_len):
         # return data from from a register. reg may be a named
         # register, an 8-bit address, or a list containing the address
@@ -269,7 +275,7 @@ class WatchDog:
         self.autoload_enabled = config.getboolean('filament_autoload', default=False)
         self.runout_detect_enabled = config.getboolean('filament_runout', default=False)
         self.inverted = config.get('inverted', default=False)
-        self.autoload_script = config.get('gcode')
+        self.autoload_script = config.get('gcode') # get load script
         self.pat9125 = pat9125
         # set initial state
         self.state = "Idle"
@@ -386,10 +392,28 @@ class WatchDog:
                 if self.check_autoload() is True: # Loop check autoload update function to detect autoload event, if it does...
                     self.gcode.respond_info("Autoload ISR detected a filament load event! Running load script...")
                     # self.prusa_gcodes.cmd_LOAD_FILAMENT() # Load filament
+                    self.do_filament_autoload()
                     self.filament_autoload_init() # Reset counters to zero
             # If printer state is currently printing...
             self.reactor.pause(self.reactor.monotonic() + 1) # Delay a sensible time between rechecking state
             logging.info("Autoload not allowed you egg!")
+
+    def do_filament_autoload(self):
+        # TODO check for nozzle temperature
+        toolhead = self.printer.lookup_object('toolhead')
+        extruder = toolhead.get_extruder()
+        heater = extruder.get_heater()
+        if heater.can_extrude:
+            self.gcode.run_script_from_command("M83")
+            self.gcode.run_script_from_command(self.autoload_script)
+            if self.pat9125.display:
+                self.pat9125.display.set_message("Autoloading Filament...")
+            self.gcode.run_script_from_command("SET_BEEPER DURATION=1")
+        else:
+            if self.pat9125.display:
+                self.pat9125.display.set_message("Error: Preheat the nozzle!")
+            self.gcode.run_script_from_command("SET_BEEPER DURATION=1")
+
 
     cmd_AUTOLOAD_FILAMENT_help = \
         "Enable Autoload when PAT9125 detects filament"
