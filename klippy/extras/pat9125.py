@@ -419,9 +419,25 @@ class WatchDog:
                 self.pat9125.display.set_message("Error: Preheat the nozzle!")
             self.gcode.run_script_from_command("SET_BEEPER DURATION=1")
 
-    def test_load_script(self):
+    def test_load_script(self, params):
         logging.info("Running autload script...")
-        self.do_filament_autoload()
+        # TODO check for nozzle temperature
+        toolhead = self.printer.lookup_object('toolhead')
+        extruder = toolhead.get_extruder()
+        heater = extruder.get_heater()
+        if heater.can_extrude:
+            logging.info("heater check passed!")
+            self.gcode.run_script_from_command("M83")
+            self.gcode.run_script_from_command(self.autoload_script)
+            if self.pat9125.display:
+                self.pat9125.display.set_message("Autoloading Filament...")
+            self.gcode.run_script_from_command("SET_BEEPER DURATION=1")
+            toolhead.wait_moves()
+        else:
+            logging.info("heater check failed.")
+            if self.pat9125.display:
+                self.pat9125.display.set_message("Error: Preheat the nozzle!")
+            self.gcode.run_script_from_command("SET_BEEPER DURATION=1")
         logging.info("Script completed!")
 
     cmd_AUTOLOAD_FILAMENT_help = \
