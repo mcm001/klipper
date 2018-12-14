@@ -252,14 +252,6 @@ class PAT9125:
         self.gcode.respond_info(
             "Value at register [%#X]: %d" % (reg, data))
 
-# class pat9125_fsensor:
-#     def __init__(self, config, pat9125):
-#         self.printer = config.get_printer()
-#         self.gcode = self.printer.lookup_object('gcode')
-#         # self.pat9125 = self.printer.lookup_object('pat9125')
-
-
-
 class WatchDog:
     def __init__(self, config, pat9125):
         self.printer = config.get_printer()
