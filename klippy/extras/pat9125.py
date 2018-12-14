@@ -287,6 +287,8 @@ class WatchDog:
             "AUTOLOAD_STATE", self.cmd_AUTOLOD_STATE)
         self.gcode.register_command(
             "READ_DELTA_Y",self.cmd_READ_DELTA_Y)
+        self.gcode.register_command(
+            "TEST_LOAD_SCRIPT",self.test_load_script)
 
     def watchdog_init(self):
         self.toolhead = self.printer.lookup_object('toolhead')
@@ -404,6 +406,7 @@ class WatchDog:
         extruder = toolhead.get_extruder()
         heater = extruder.get_heater()
         if heater.can_extrude:
+            logging.info("heater check passed!")
             self.gcode.run_script_from_command("M83")
             self.gcode.run_script_from_command(self.autoload_script)
             if self.pat9125.display:
@@ -411,10 +414,15 @@ class WatchDog:
             self.gcode.run_script_from_command("SET_BEEPER DURATION=1")
             toolhead.wait_moves()
         else:
+            logging.info("heater check failed.")
             if self.pat9125.display:
                 self.pat9125.display.set_message("Error: Preheat the nozzle!")
             self.gcode.run_script_from_command("SET_BEEPER DURATION=1")
 
+    def test_load_script(self):
+        logging.info("Running autload script...")
+        self.do_filament_autoload()
+        logging.info("Script completed!")
 
     cmd_AUTOLOAD_FILAMENT_help = \
         "Enable Autoload when PAT9125 detects filament"
