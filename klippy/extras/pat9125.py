@@ -259,7 +259,6 @@ class WatchDog:
         self.gcode = self.printer.lookup_object('gcode')
         self.prusa_gcodes = self.printer.lookup_object('prusa_gcodes')
         self.pat9125 = pat9125
-        # self.pat9125_fsensor = pat9125_fsensor(config, self)
         self.runout_callback = None
         self.is_autoload = False
         self.refresh_time = .100
@@ -267,26 +266,21 @@ class WatchDog:
         self.last_position = [0., 0., 0., 0.]
         self.watchdog_timer = self.reactor.register_timer(
             self._watchdog_update_event)
-
         self.autoload_enabled = config.getboolean('filament_autoload', default=False)
         self.runout_detect_enabled = config.getboolean('filament_runout', default=False)
         self.inverted = config.get('inverted', default=False)
+        self.autoload_script = config.get('gcode')
         self.pat9125 = pat9125
-        self.do_autoload_now = False
-        
-
         # set initial state
         self.state = "Idle"
         self.autoload_allowed = True
-
-
         self.gcode.register_command(
             "AUTOLOAD_FILAMENT", self.cmd_AUTOLOAD_FILAMENT,
             desc=self.cmd_AUTOLOAD_FILAMENT_help)
         self.gcode.register_command(
             "AUTOLOAD_STATE", self.cmd_AUTOLOD_STATE)
-
-        self.gcode.register_command("READ_DELTA_Y",self.cmd_READ_DELTA_Y)
+        self.gcode.register_command(
+            "READ_DELTA_Y",self.cmd_READ_DELTA_Y)
 
     def watchdog_init(self):
         self.toolhead = self.printer.lookup_object('toolhead')
@@ -357,7 +351,6 @@ class WatchDog:
         self.pat9125._pat9125_init()
         self.fsensor_autoload_sum = 0
         self.fsensor_autoload_c = 0
-        self.do_autoload_now = False
     
     def check_autoload(self):
         # check the sensor values for an autoload event
@@ -407,7 +400,6 @@ class WatchDog:
         curtime = self.reactor.monotonic()
         endtime = curtime + timeout # set timeout to 20 seconds 
         while curtime < endtime:
-            # while self.do_autoload_now is False:
             if self.check_autoload() is True:
                 # TODO Do gcode script for autoload
                 # self.prusa_gcodes.cmd_LOAD_FILAMENT
