@@ -409,6 +409,7 @@ class WatchDog:
             if self.pat9125.display:
                 self.pat9125.display.set_message("Autoloading Filament...")
             self.gcode.run_script_from_command("SET_BEEPER DURATION=1")
+            toolhead.wait_moves()
         else:
             if self.pat9125.display:
                 self.pat9125.display.set_message("Error: Preheat the nozzle!")
