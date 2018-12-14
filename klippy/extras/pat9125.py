@@ -411,13 +411,13 @@ class WatchDog:
             self.gcode.run_script_from_command(self.autoload_script)
             if self.pat9125.display:
                 self.pat9125.display.set_message("Autoloading Filament...")
-            self.gcode.run_script_from_command("SET_BEEPER DURATION=1")
+            self.gcode.run_script_from_command("M300 S1000 P100")
             toolhead.wait_moves()
         else:
             logging.info("heater check failed.")
             if self.pat9125.display:
                 self.pat9125.display.set_message("Error: Preheat the nozzle!")
-            self.gcode.run_script_from_command("SET_BEEPER DURATION=1")
+            self.gcode.run_script_from_command("M300 S1000 P100")
 
     def test_load_script(self, params):
         logging.info("Running autload script...")
@@ -431,13 +431,13 @@ class WatchDog:
             self.gcode.run_script_from_command(self.autoload_script)
             if self.pat9125.display:
                 self.pat9125.display.set_message("Autoloading Filament...")
-            self.gcode.run_script_from_command("SET_BEEPER DURATION=1")
+            self.gcode.run_script_from_command("M300 S1000 P100")
             toolhead.wait_moves()
         else:
             logging.info("heater check failed.")
             if self.pat9125.display:
                 self.pat9125.display.set_message("Error: Preheat the nozzle!")
-            self.gcode.run_script_from_command("SET_BEEPER DURATION=1")
+            self.gcode.run_script_from_command("M300 S1000 P100")
         logging.info("Script completed!")
 
     cmd_AUTOLOAD_FILAMENT_help = \
