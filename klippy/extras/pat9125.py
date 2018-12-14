@@ -338,7 +338,7 @@ class WatchDog:
     def pat9125_update_y(self):
         pat_dict = self.pat9125.pat9125_update()
         if pat_dict is None:
-            logging.error("No motion detected, can't update")
+            # logging.error("No motion detected, can't update")
             return pat_dict
         else:
             delta_yl = pat_dict['DELTA_YL']
