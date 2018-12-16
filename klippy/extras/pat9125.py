@@ -349,9 +349,9 @@ class WatchDog:
             if ( DY & 0x800 ):
                 DY -= 4096
             if self.inverted is True:
-                self.pat9125.pat9125_y += DY
-            else:
                 self.pat9125.pat9125_y -= DY
+            else:
+                self.pat9125.pat9125_y += DY
             return pat_dict
 
     def filament_autoload_init(self):
