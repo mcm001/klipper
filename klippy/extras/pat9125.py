@@ -280,15 +280,15 @@ class WatchDog:
         # set initial state
         self.state = "Idle"
         self.autoload_allowed = True
-        self.gcode.register_command(
-            "AUTOLOAD_FILAMENT", self.cmd_AUTOLOAD_FILAMENT,
-            desc=self.cmd_AUTOLOAD_FILAMENT_help)
+        # self.gcode.register_command(
+        #     "AUTOLOAD_FILAMENT", self.cmd_AUTOLOAD_FILAMENT,
+        #     desc=self.cmd_AUTOLOAD_FILAMENT_help)
         self.gcode.register_command(
             "AUTOLOAD_STATE", self.cmd_AUTOLOD_STATE)
+        # self.gcode.register_command(
+        #     "TEST_LOAD_SCRIPT",self.test_load_script)
         self.gcode.register_command(
-            "READ_DELTA_Y",self.cmd_READ_DELTA_Y)
-        self.gcode.register_command(
-            "TEST_LOAD_SCRIPT",self.test_load_script)
+            "WATCH_FSENSOR",self.cmd_WATCH_FSENSOR)
 
     def watchdog_init(self):
         self.toolhead = self.printer.lookup_object('toolhead')
@@ -349,8 +349,10 @@ class WatchDog:
             if ( DY & 0x800 ):
                 DY -= 4096
             if self.inverted is True:
+                logging.info("decrementing as it's inverted...")
                 self.pat9125.pat9125_y -= DY
             else:
+                logging.info("incramenting because not inverted...")
                 self.pat9125.pat9125_y += DY
             return pat_dict
 
@@ -359,6 +361,8 @@ class WatchDog:
         self.pat9125._pat9125_init()
         self.fsensor_autoload_sum = 0
         self.fsensor_autoload_c = 0
+
+        logging.info("Current settings: Autoload allowed? %s Enabled? %s Inverted? %s" % (self.autoload_allowed, self.autoload_enabled, self.inverted))
     
     def check_autoload(self):
         # check the sensor values for an autoload event
@@ -382,7 +386,7 @@ class WatchDog:
                     self.fsensor_autoload_c -= 2 # decrement change counter by 2 
                 self.fsensor_autoload_y = self.pat9125.pat9125_y
                 logging.info("Autoload count: %s Autoload sum: %s, delta y: %s Overall Position: %s" % (self.fsensor_autoload_c, self.fsensor_autoload_sum, dy, self.pat9125.pat9125_y ))
-        if (self.fsensor_autoload_c >= 12) and (self.fsensor_autoload_sum > 20):
+        if (self.fsensor_autoload_c >= 12) and (self.fsensor_autoload_sum > 15):
             return True
         else:
             return False
@@ -419,62 +423,55 @@ class WatchDog:
                 self.pat9125.display.set_message("Error: Preheat the nozzle!")
             self.gcode.run_script_from_command("M300 S1000 P100")
 
-    def test_load_script(self, params):
-        logging.info("Running autload script...")
-        # TODO check for nozzle temperature
-        toolhead = self.printer.lookup_object('toolhead')
-        extruder = toolhead.get_extruder()
-        heater = extruder.get_heater()
-        if heater.can_extrude:
-            logging.info("heater check passed!")
-            self.gcode.run_script_from_command("M83")
-            self.gcode.run_script_from_command(self.autoload_script)
-            if self.pat9125.display:
-                self.pat9125.display.set_message("Autoloading Filament...")
-            self.gcode.run_script_from_command("M300 S1000 P100")
-            toolhead.wait_moves()
-        else:
-            logging.info("heater check failed.")
-            if self.pat9125.display:
-                self.pat9125.display.set_message("Error: Preheat the nozzle!")
-            self.gcode.run_script_from_command("M300 S1000 P100")
-        logging.info("Script completed!")
+    # def test_load_script(self, params):
+    #     logging.info("Running autload script...")
+    #     # TODO check for nozzle temperature
+    #     toolhead = self.printer.lookup_object('toolhead')
+    #     extruder = toolhead.get_extruder()
+    #     heater = extruder.get_heater()
+    #     if heater.can_extrude:
+    #         logging.info("heater check passed!")
+    #         self.gcode.run_script_from_command("M83")
+    #         self.gcode.run_script_from_command(self.autoload_script)
+    #         if self.pat9125.display:
+    #             self.pat9125.display.set_message("Autoloading Filament...")
+    #         self.gcode.run_script_from_command("M300 S1000 P100")
+    #         toolhead.wait_moves()
+    #     else:
+    #         logging.info("heater check failed.")
+    #         if self.pat9125.display:
+    #             self.pat9125.display.set_message("Error: Preheat the nozzle!")
+    #         self.gcode.run_script_from_command("M300 S1000 P100")
+    #     logging.info("Script completed!")
 
-    cmd_AUTOLOAD_FILAMENT_help = \
-        "Enable Autoload when PAT9125 detects filament"
-    def cmd_AUTOLOAD_FILAMENT(self, params): # FIXME to work with callbacks, how about a forever running loop that starts running at init and checks the state set by the callback, then based on that runs the check loop? Either way this cmd will be depreciated soon I hope, can be replaced with a check autoload state command
-        self.gcode.respond_info("Autoload init")
-        self.filament_autoload_init()
-        timeout = 20
-        curtime = self.reactor.monotonic()
-        endtime = curtime + timeout # set timeout to 20 seconds 
-        while curtime < endtime:
-            if self.check_autoload() is True:
-                # TODO Do gcode script for autoload
-                # self.prusa_gcodes.cmd_LOAD_FILAMENT
-                self.gcode.respond_info("Autoload detected!")
-                return
-            # self.reactor.pause(self.reactor.monotonic() + .005) # TODO do we need to delay?
-            curtime = self.reactor.monotonic()
-        self.gcode.respond_info("Autoload timed out after %i seconds" % timeout)
+    # cmd_AUTOLOAD_FILAMENT_help = \
+    #     "Enable Autoload when PAT9125 detects filament"
+    # def cmd_AUTOLOAD_FILAMENT(self, params): # FIXME to work with callbacks, how about a forever running loop that starts running at init and checks the state set by the callback, then based on that runs the check loop? Either way this cmd will be depreciated soon I hope, can be replaced with a check autoload state command
+    #     self.gcode.respond_info("Autoload init")
+    #     self.filament_autoload_init()
+    #     timeout = 20
+    #     curtime = self.reactor.monotonic()
+    #     endtime = curtime + timeout # set timeout to 20 seconds 
+    #     while curtime < endtime:
+    #         if self.check_autoload() is True:
+    #             # TODO Do gcode script for autoload
+    #             # self.prusa_gcodes.cmd_LOAD_FILAMENT
+    #             self.gcode.respond_info("Autoload detected!")
+    #             return
+    #         # self.reactor.pause(self.reactor.monotonic() + .005) # TODO do we need to delay?
+    #         curtime = self.reactor.monotonic()
+    #     self.gcode.respond_info("Autoload timed out after %i seconds" % timeout)
 
     # def cmd_AUTOLOD_STATE_help = "Querry the current autoload state. Returns current printer state and autoload allowed status."
     def cmd_AUTOLOD_STATE(self, params):
         self.gcode.respond_info("Current self state: %s Autoload allowed? %s" % (self.state, self.autoload_allowed))
 
-    def cmd_READ_DELTA_Y(self, params):
+    def cmd_WATCH_FSENSOR(self, params):
         self.pat9125.cmd_PAT_TEST_INIT(params)
         curtime = self.reactor.monotonic()
-        endtime = curtime + 10
+        endtime = curtime + 8
         while curtime < endtime:
-            motion = self.pat9125.read_register(PAT9125_REGS['MOTION'],1)[0]
-            if motion & 0x80:
-                data = self.pat9125.read_register(PAT9125_REGS['DELTA_XL'],21)
-                if data[1] != 0:
-                    self.gcode.respond_info("X: %d, Y: %d, XYH: %d" % (data[0], data[1], data[15]))
-            curtime = self.reactor.pause(curtime + .05)
-        # if not y:
-        #     self.gcode.respond_info("Test Failed")
+            self.check_autoload()
 
 
 def load_config(config):
