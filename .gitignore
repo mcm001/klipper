@@ -4,3 +4,7 @@ out
 .config
 .config.old
 klippy/.version
+.vscode/settings.json
+.vscode/settings.json
+klipper_workspace.code-workspace
+klipper.code-workspace

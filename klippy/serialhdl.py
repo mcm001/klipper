@@ -183,20 +183,23 @@ class SerialCommand:
     def send(self, data=(), minclock=0, reqclock=0):
         cmd = self.cmd.encode(data)
         self.serial.raw_send(cmd, minclock, reqclock, self.cmd_queue)
-    def send_with_response(self, data=(), response=None, response_oid=None):
+    def send_with_response(self, data=(), response=None, response_oid=None,
+                           poll_time=.05):
         cmd = self.cmd.encode(data)
-        src = SerialRetryCommand(self.serial, cmd, response, response_oid)
+        src = SerialRetryCommand(
+            self.serial, cmd, response, response_oid, poll_time)
         return src.get_response()
 
 # Class to retry sending of a query command until a given response is received
 class SerialRetryCommand:
     TIMEOUT_TIME = 5.0
     RETRY_TIME = 0.500
-    def __init__(self, serial, cmd, name, oid=None):
+    def __init__(self, serial, cmd, name, oid=None, poll_time=.05):
         self.serial = serial
         self.cmd = cmd
         self.name = name
         self.oid = oid
+        self.poll_time = poll_time
         self.response = None
         self.min_query_time = self.serial.reactor.monotonic()
         self.serial.register_callback(self.handle_callback, self.name, self.oid)
@@ -217,7 +220,7 @@ class SerialRetryCommand:
     def get_response(self):
         eventtime = self.serial.reactor.monotonic()
         while self.response is None:
-            eventtime = self.serial.reactor.pause(eventtime + 0.05)
+            eventtime = self.serial.reactor.pause(eventtime + self.poll_time)
             if eventtime > self.min_query_time + self.TIMEOUT_TIME:
                 self.unregister()
                 raise error("Timeout on wait for '%s' response" % (self.name,))
